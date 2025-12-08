@@ -40,19 +40,19 @@ type Job struct {
 
 // Phase 2: Multi-video story generation
 type Project struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	DogName      string       `json:"dog_name"`
-	DogBreed     string       `json:"dog_breed,omitempty"`
-	EndingImage  string       `json:"ending_image,omitempty"`  // 結尾圖片路徑
-	OwnerMessage string       `json:"owner_message,omitempty"` // 主人想對狗狗說的話
-	Status       string       `json:"status"` // pending, analyzing, generating_story, generating_video, completed, failed
-	Videos       []VideoInfo  `json:"videos"`
-	Story        *Story       `json:"story,omitempty"`
-	FinalVideo   string       `json:"final_video,omitempty"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	Error        string       `json:"error,omitempty"`
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	DogName      string      `json:"dog_name"`
+	DogBreed     string      `json:"dog_breed,omitempty"`
+	EndingImage  string      `json:"ending_image,omitempty"`  // 結尾圖片路徑
+	OwnerMessage string      `json:"owner_message,omitempty"` // 主人想對狗狗說的話
+	Status       string      `json:"status"`                  // pending, analyzing, generating_story, generating_video, completed, failed
+	Videos       []VideoInfo `json:"videos"`
+	Story        *Story      `json:"story,omitempty"`
+	FinalVideo   string      `json:"final_video,omitempty"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
+	Error        string      `json:"error,omitempty"`
 }
 
 type VideoInfo struct {
@@ -67,20 +67,21 @@ type VideoInfo struct {
 }
 
 type Story struct {
-	Title         string         `json:"title"`
-	Chapters      []StoryChapter `json:"chapters"`
-	OwnerMessage  string         `json:"owner_message,omitempty"`  // 主人想對狗狗說的話
-	DogResponse   string         `json:"dog_response,omitempty"`   // 狗狗回應主人（AI 生成）
+	Title        string         `json:"title"`
+	Chapters     []StoryChapter `json:"chapters"`
+	OwnerMessage string         `json:"owner_message,omitempty"` // 主人想對狗狗說的話
+	DogResponse  string         `json:"dog_response,omitempty"`  // 狗狗回應主人（AI 生成）
+	FinalMessage string         `json:"final_message,omitempty"` // 兼容舊代碼，可能不再使用
 }
 
 type StoryChapter struct {
-	Index       int     `json:"index"`
-	Narration   string  `json:"narration"`
-	VideoID     string  `json:"video_id"`
-	StartTime   float64 `json:"start_time"`
-	EndTime     float64 `json:"end_time"`
-	AudioPath   string  `json:"audio_path,omitempty"`
-	Duration    float64 `json:"duration"`
+	Index     int     `json:"index"`
+	Narration string  `json:"narration"`
+	VideoID   string  `json:"video_id"`
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+	AudioPath string  `json:"audio_path,omitempty"`
+	Duration  float64 `json:"duration"`
 }
 
 type Segment struct {
@@ -693,12 +694,12 @@ func analyzeSegments(job *Job) error {
 	}
 
 	log.Printf("AI analyzed %d/%d segments successfully for job %s", successCount, len(job.Segments), job.ID)
-	
+
 	// 只要有至少一半的 segments 分析成功就繼續
 	if successCount < len(job.Segments)/2 {
 		return fmt.Errorf("too many segments failed analysis (%d/%d succeeded)", successCount, len(job.Segments))
 	}
-	
+
 	return nil
 }
 
@@ -711,7 +712,7 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 	// 智能選擇最多 10 張代表性圖片（均勻分佈）
 	maxImages := 10
 	selectedFrames := []string{}
-	
+
 	if len(framePaths) <= maxImages {
 		// 圖片數量不多，全部使用
 		selectedFrames = framePaths
@@ -736,15 +737,15 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 			log.Printf("Warning: failed to compress image %s: %v", framePath, err)
 			continue
 		}
-		
+
 		base64Image := base64.StdEncoding.EncodeToString(compressedData)
 		base64Images = append(base64Images, base64Image)
 	}
-	
+
 	if len(base64Images) == 0 {
 		return nil, fmt.Errorf("no frames could be processed")
 	}
-	
+
 	log.Printf("Successfully compressed %d images for video %s", len(base64Images), videoID)
 
 	// 構建 API 請求
@@ -772,7 +773,7 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 只回傳 JSON，不要其他文字。`, len(base64Images)),
 		},
 	}
-	
+
 	// 添加所有圖片
 	for _, imgData := range base64Images {
 		parts = append(parts, map[string]interface{}{
@@ -782,7 +783,7 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 			},
 		})
 	}
-	
+
 	requestBody := map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{
@@ -856,12 +857,12 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 	if len(apiResponse.Candidates) == 0 {
 		return nil, fmt.Errorf("no candidates in response")
 	}
-	
+
 	candidate := apiResponse.Candidates[0]
-	
+
 	// 檢查內容
 	if candidate.Content.Parts == nil || len(candidate.Content.Parts) == 0 {
-		log.Printf("Gemini returned empty content for video %s. FinishReason: %s, Response: %s", 
+		log.Printf("Gemini returned empty content for video %s. FinishReason: %s, Response: %s",
 			videoID, candidate.FinishReason, string(bodyBytes))
 		return nil, fmt.Errorf("no content (finishReason: %s)", candidate.FinishReason)
 	}
@@ -893,7 +894,6 @@ func analyzeSegmentWithAI(segment *Segment) (*Analysis, error) {
 	// 使用新的函數分析
 	return analyzeVideoWithAI(segment.FramePaths, fmt.Sprintf("segment_%d", segment.Index))
 }
-
 
 func findHighlights(job *Job) error {
 	highlights := []Highlight{}
@@ -1016,13 +1016,13 @@ func processProject(projectID string) {
 		}
 		successCount++
 	}
-	
+
 	// 至少要有一半的影片分析成功才能繼續
 	if successCount == 0 {
 		markProjectFailed(projectID, "All videos failed to analyze")
 		return
 	}
-	
+
 	log.Printf("✅ Successfully analyzed %d/%d videos", successCount, len(project.Videos))
 
 	// Step 2: Generate story with AI
@@ -1067,7 +1067,7 @@ func processProject(projectID string) {
 
 func analyzeVideo(project *Project, videoIndex int) error {
 	video := &project.Videos[videoIndex]
-	
+
 	log.Printf("Analyzing video %s (%s)", video.ID, video.OriginalName)
 
 	// Extract frames - 每2秒一張 (fps=0.5)
@@ -1126,7 +1126,7 @@ func analyzeVideo(project *Project, videoIndex int) error {
 
 	// Find highlights based on analysis
 	highlights := []Highlight{}
-	
+
 	// 如果有互動，將整個影片（或前幾個 segment）標記為 highlight
 	if analysis.HasDog && analysis.HasHuman && analysis.InteractionType != "none" {
 		// 取前 15 秒作為 highlight
@@ -1166,7 +1166,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 	allHighlights := []string{}
 	for _, video := range project.Videos {
 		for _, highlight := range video.Highlights {
-			allHighlights = append(allHighlights, fmt.Sprintf("影片《%s》: %s (情緒：%s)", 
+			allHighlights = append(allHighlights, fmt.Sprintf("影片《%s》: %s (情緒：%s)",
 				video.OriginalName, highlight.Caption, highlight.Emotion))
 		}
 	}
@@ -1207,9 +1207,9 @@ func generateStoryWithAI(project *Project) (*Story, error) {
   ]
 }
 
-只回傳 JSON，不要其他文字。`, 
-		project.DogName, 
-		project.DogBreed, 
+只回傳 JSON，不要其他文字。`,
+		project.DogName,
+		project.DogBreed,
 		strings.Join(allHighlights, "\n"))
 
 	// 調用 Gemini AI
@@ -1262,9 +1262,9 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 	}
 
 	candidate := apiResponse.Candidates[0]
-	
+
 	if len(candidate.Content.Parts) == 0 {
-		log.Printf("Story generation failed: no parts. FinishReason: %v, Response: %s", 
+		log.Printf("Story generation failed: no parts. FinishReason: %v, Response: %s",
 			candidate, string(bodyBytes))
 		return nil, fmt.Errorf("no content in AI response (finishReason may be MAX_TOKENS or SAFETY)")
 	}
@@ -1297,12 +1297,12 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 
 	for i, ch := range storyResponse.Chapters {
 		if ch.VideoIndex >= len(project.Videos) {
-			log.Printf("Warning: chapter %d video_index %d >= videos length %d, skipping", 
+			log.Printf("Warning: chapter %d video_index %d >= videos length %d, skipping",
 				i, ch.VideoIndex, len(project.Videos))
 			continue
 		}
 		video := project.Videos[ch.VideoIndex]
-		
+
 		// 如果沒有 highlights 或 highlight_index 超出範圍，使用整個影片
 		var startTime, endTime float64
 		if len(video.Highlights) > 0 && ch.HighlightIndex < len(video.Highlights) {
@@ -1331,7 +1331,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 	}
 
 	log.Printf("Generated story with %d chapters", len(story.Chapters))
-	
+
 	// 如果主人有留言，生成狗狗的回應
 	if project.OwnerMessage != "" {
 		dogResponse, err := generateDogResponse(project, story)
@@ -1343,7 +1343,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		}
 		story.OwnerMessage = project.OwnerMessage
 	}
-	
+
 	return story, nil
 }
 
@@ -1427,7 +1427,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 
 	response := apiResponse.Candidates[0].Content.Parts[0].Text
 	response = strings.TrimSpace(response)
-	response = strings.Trim(response, "「」""")
+	response = strings.Trim(response, "「」\"")
 
 	log.Printf("Generated dog response: %s", response)
 	return response, nil
@@ -1435,12 +1435,12 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 
 func generateTTS(project *Project, chapterIndex int) error {
 	chapter := &project.Story.Chapters[chapterIndex]
-	
+
 	log.Printf("Generating TTS for chapter %d: %s", chapterIndex+1, chapter.Narration)
 
 	// 使用 Google Cloud Text-to-Speech API
 	// API endpoint: https://texttospeech.googleapis.com/v1/text:synthesize
-	
+
 	requestBody := map[string]interface{}{
 		"input": map[string]string{
 			"text": chapter.Narration,
@@ -1464,7 +1464,7 @@ func generateTTS(project *Project, chapterIndex int) error {
 
 	// 使用與 Gemini 相同的 API Key
 	url := fmt.Sprintf("https://texttospeech.googleapis.com/v1/text:synthesize?key=%s", aiAPIKey)
-	
+
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create TTS request: %v", err)
@@ -1511,7 +1511,7 @@ func generateTTS(project *Project, chapterIndex int) error {
 	// 儲存音訊檔案
 	outputDir := filepath.Join(storagePath, "projects", project.ID, "audio")
 	os.MkdirAll(outputDir, 0755)
-	
+
 	audioPath := filepath.Join(outputDir, fmt.Sprintf("chapter_%d.mp3", chapterIndex+1))
 	if err := os.WriteFile(audioPath, audioData, 0644); err != nil {
 		return fmt.Errorf("failed to save audio: %v", err)
@@ -1556,7 +1556,7 @@ func compositeVideo(project *Project) error {
 	}
 
 	outputDir := filepath.Join(storagePath, "projects", project.ID)
-	
+
 	// Step 1: 生成帶轉場效果的影片片段（移除原始音訊，只保留 TTS）
 	log.Printf("Step 1: Creating video segments with transitions and TTS audio")
 	videoWithTTSPath := filepath.Join(outputDir, "video_with_tts.mp4")
@@ -1612,12 +1612,12 @@ func compositeVideo(project *Project) error {
 // createVideoWithTransitionsAndTTS - 創建帶轉場效果和 TTS 的影片（移除原始音訊）
 func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error {
 	outputDir := filepath.Dir(outputPath)
-	
+
 	log.Printf("Creating video segments with fade transitions and TTS audio")
 
 	// 處理每個章節
 	processedSegments := []string{}
-	filterComplex := []string{}
+	// filterComplex := []string{} // Unused
 	audioInputs := []string{}
 
 	for i, chapter := range project.Story.Chapters {
@@ -1637,15 +1637,15 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 
 		// 剪切影片片段（移除音訊）
 		segmentPath := filepath.Join(outputDir, fmt.Sprintf("segment_%d.mp4", chapter.Index))
-		
+
 		// 計算淡入淡出
 		fadeDuration := 0.5
 		videoDuration := chapter.EndTime - chapter.StartTime
-		
+
 		// 使用 ffmpeg 剪切並添加淡入淡出效果（移除音訊）
-		fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f", 
+		fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 			fadeDuration, videoDuration-fadeDuration, fadeDuration)
-		
+
 		cmd := exec.Command("ffmpeg",
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
@@ -1663,7 +1663,7 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 		}
 
 		processedSegments = append(processedSegments, segmentPath)
-		
+
 		// 如果有 TTS 音訊，記錄下來
 		if chapter.AudioPath != "" {
 			audioInputs = append(audioInputs, chapter.AudioPath)
@@ -1705,13 +1705,13 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 	// 合併所有 TTS 音訊
 	if len(audioInputs) > 0 {
 		log.Printf("Merging %d TTS audio files", len(audioInputs))
-		
+
 		audioListPath := filepath.Join(outputDir, "concat_audio.txt")
 		af, err := os.Create(audioListPath)
 		if err != nil {
 			return err
 		}
-		
+
 		for _, audioPath := range audioInputs {
 			fmt.Fprintf(af, "file '%s'\n", audioPath)
 		}
@@ -1749,7 +1749,7 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 
 			os.Remove(mergedAudioPath)
 		}
-		
+
 		os.Remove(audioListPath)
 	} else {
 		// 沒有 TTS，直接使用影片
@@ -1769,23 +1769,137 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 // addEndingImage - 添加結尾圖片並顯示主人的話和狗狗的回應
 func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	log.Printf("Adding ending image with owner message and dog response")
-	
+
 	outputDir := filepath.Dir(inputVideo)
 	
-	// 創建結尾圖片影片（5秒，帶淡入淡出）
-	endingDuration := 5.0
+	// 生成狗狗回應（如果還沒有的話，使用 AI 生成）
+	if project.Story.DogResponse == "" {
+		dogResponse, err := generateDogResponse(project, project.Story)
+		if err != nil {
+			log.Printf("Warning: Failed to generate dog response: %v", err)
+			project.Story.DogResponse = "主人，我永遠愛你！每天和你在一起，是我最幸福的時光。"
+		} else {
+			project.Story.DogResponse = dogResponse
+		}
+	}
+	
+	// 嘗試生成 TTS 音訊
+	ownerAudioPath := filepath.Join(outputDir, "owner_message.mp3")
+	dogAudioPath := filepath.Join(outputDir, "dog_response.mp3")
+	
+	ownerTTSSuccess := generateOwnerMessageTTS(project.Story.OwnerMessage, ownerAudioPath) == nil
+	dogTTSSuccess := generateDogResponseTTS(project.Story.DogResponse, dogAudioPath) == nil
+	
+	// 根據 TTS 是否成功來決定影片時長
+	var endingDuration float64
+	var combinedAudioPath string
+	hasAudio := false
+	
+	if ownerTTSSuccess && dogTTSSuccess {
+		// 兩個 TTS 都成功，合併音訊
+		ownerDuration := getAudioDuration(ownerAudioPath)
+		dogDuration := getAudioDuration(dogAudioPath)
+		totalAudioDuration := ownerDuration + dogDuration + 1.0
+		endingDuration = totalAudioDuration + 1.0
+		
+		log.Printf("Ending with audio - duration: %.2fs (owner: %.2fs, dog: %.2fs)", endingDuration, ownerDuration, dogDuration)
+		
+		combinedAudioPath = filepath.Join(outputDir, "ending_audio.mp3")
+		silenceCmd := exec.Command("ffmpeg",
+			"-i", ownerAudioPath,
+			"-i", dogAudioPath,
+			"-filter_complex", "[0:a]apad=pad_dur=1[a0];[a0][1:a]concat=n=2:v=0:a=1[aout]",
+			"-map", "[aout]",
+			"-y",
+			combinedAudioPath,
+		)
+		if _, err := silenceCmd.CombinedOutput(); err != nil {
+			log.Printf("Warning: Failed to combine audio: %v", err)
+			hasAudio = false
+		} else {
+			hasAudio = true
+		}
+	}
+	
+	if !hasAudio {
+		// 沒有音訊，使用固定時長
+		endingDuration = 10.0
+		log.Printf("Ending without audio - using fixed duration: %.2fs", endingDuration)
+	}
+	
+	if endingDuration < 8.0 {
+		endingDuration = 8.0
+	}
+
+	// 創建結尾圖片影片
 	endingVideoPath := filepath.Join(outputDir, "ending_segment.mp4")
 	
-	cmd := exec.Command("ffmpeg",
-		"-loop", "1",
-		"-i", project.EndingImage,
-		"-vf", fmt.Sprintf("scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fade=t=in:st=0:d=0.5,fade=t=out:st=%.2f:d=0.5", endingDuration-0.5),
-		"-t", fmt.Sprintf("%.2f", endingDuration),
-		"-c:v", "libx264",
-		"-pix_fmt", "yuv420p",
-		"-y",
-		endingVideoPath,
-	)
+	// 準備字幕文字 - 分成多行以便更好顯示
+	ownerText := fmt.Sprintf("主人說：%s", project.Story.OwnerMessage)
+	dogText := fmt.Sprintf("🐾 %s：%s", project.DogName, project.Story.DogResponse)
+	
+	// 構建 FFmpeg 命令
+	var cmd *exec.Cmd
+	if hasAudio {
+		// 有音訊版本 - 在不同時間顯示不同文字
+		ownerDuration := getAudioDuration(ownerAudioPath)
+		cmd = exec.Command("ffmpeg",
+			"-loop", "1",
+			"-i", project.EndingImage,
+			"-i", combinedAudioPath,
+			"-vf", fmt.Sprintf(
+				"scale=1920:1080:force_original_aspect_ratio=decrease,"+
+				"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"+
+				"drawtext=text='%s':fontsize=40:fontcolor=white:"+
+				"x=(w-text_w)/2:y=h-200:"+
+				"enable='between(t,0,%.2f)':"+
+				"box=1:boxcolor=black@0.6:boxborderw=10,"+
+				"drawtext=text='%s':fontsize=40:fontcolor=white:"+
+				"x=(w-text_w)/2:y=h-200:"+
+				"enable='between(t,%.2f,%.2f)':"+
+				"box=1:boxcolor=black@0.6:boxborderw=10,"+
+				"fade=t=in:st=0:d=0.5,fade=t=out:st=%.2f:d=0.5",
+				escapeFFmpegText(ownerText),
+				ownerDuration+1.0,
+				escapeFFmpegText(dogText),
+				ownerDuration+1.0,
+				endingDuration,
+				endingDuration-0.5,
+			),
+			"-t", fmt.Sprintf("%.2f", endingDuration),
+			"-c:v", "libx264",
+			"-c:a", "aac",
+			"-pix_fmt", "yuv420p",
+			"-shortest",
+			"-y",
+			endingVideoPath,
+		)
+	} else {
+		// 無音訊版本 - 同時顯示兩段文字
+		cmd = exec.Command("ffmpeg",
+			"-loop", "1",
+			"-i", project.EndingImage,
+			"-vf", fmt.Sprintf(
+				"scale=1920:1080:force_original_aspect_ratio=decrease,"+
+				"pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"+
+				"drawtext=text='%s':fontsize=36:fontcolor=white:"+
+				"x=(w-text_w)/2:y=h-280:"+
+				"box=1:boxcolor=black@0.6:boxborderw=10,"+
+				"drawtext=text='%s':fontsize=36:fontcolor=white:"+
+				"x=(w-text_w)/2:y=h-180:"+
+				"box=1:boxcolor=black@0.6:boxborderw=10,"+
+				"fade=t=in:st=0:d=0.5,fade=t=out:st=%.2f:d=0.5",
+				escapeFFmpegText(ownerText),
+				escapeFFmpegText(dogText),
+				endingDuration-0.5,
+			),
+			"-t", fmt.Sprintf("%.2f", endingDuration),
+			"-c:v", "libx264",
+			"-pix_fmt", "yuv420p",
+			"-y",
+			endingVideoPath,
+		)
+	}
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create ending image video: %v, output: %s", err, string(output))
@@ -1797,7 +1911,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Fprintf(f, "file '%s'\n", filepath.Base(inputVideo))
 	fmt.Fprintf(f, "file '%s'\n", filepath.Base(endingVideoPath))
 	f.Close()
@@ -1818,6 +1932,15 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	// 清理
 	os.Remove(concatListPath)
 	os.Remove(endingVideoPath)
+	if ownerTTSSuccess {
+		os.Remove(ownerAudioPath)
+	}
+	if dogTTSSuccess {
+		os.Remove(dogAudioPath)
+	}
+	if hasAudio {
+		os.Remove(combinedAudioPath)
+	}
 
 	log.Printf("✅ Added ending image with duration %.2fs", endingDuration)
 	return nil
@@ -1825,7 +1948,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 
 func compositeVideoOnly(project *Project, outputPath string) error {
 	outputDir := filepath.Dir(outputPath)
-	
+
 	// 建立影片片段列表檔案
 	listFile := filepath.Join(outputDir, "concat_list.txt")
 	f, err := os.Create(listFile)
@@ -1893,7 +2016,7 @@ func compositeVideoOnly(project *Project, outputPath string) error {
 
 func compositeVideoWithAudio(project *Project, outputPath string) error {
 	outputDir := filepath.Dir(outputPath)
-	
+
 	log.Printf("Compositing video with TTS audio for project %s", project.ID)
 
 	// 處理每個章節：調整影片時長以匹配音訊時長
@@ -1915,22 +2038,22 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 		}
 
 		segmentPath := filepath.Join(outputDir, fmt.Sprintf("segment_%d.mp4", i+1))
-		
+
 		// 剪輯影片為 15 秒左右
 		targetDuration := 15.0 // 目標 15 秒
 		actualEndTime := chapter.StartTime + targetDuration
 		if actualEndTime > chapter.EndTime {
 			actualEndTime = chapter.EndTime
 		}
-		
+
 		if chapter.AudioPath != "" && chapter.Duration > 0 {
 			// 有音訊：調整影片速度以匹配音訊時長
 			videoDuration := actualEndTime - chapter.StartTime
-			
+
 			// 如果音訊比影片長，減慢影片播放速度
 			// 如果音訊比影片短，加快影片播放速度
 			speedFactor := videoDuration / chapter.Duration
-			
+
 			// 限制速度範圍（0.5x - 2.0x）
 			if speedFactor < 0.5 {
 				speedFactor = 0.5
@@ -1938,20 +2061,20 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 				speedFactor = 2.0
 			}
 
-			log.Printf("Chapter %d: video=%.2fs, audio=%.2fs, speed=%.2fx", 
+			log.Printf("Chapter %d: video=%.2fs, audio=%.2fs, speed=%.2fx",
 				i+1, videoDuration, chapter.Duration, speedFactor)
 
 			// 剪出影片片段並調整速度（移除原音）+ 淡入淡出
-			log.Printf("Creating segment %d with speed adjustment (%.2fx) and fade: %s to %s", i+1, 
+			log.Printf("Creating segment %d with speed adjustment (%.2fx) and fade: %s to %s", i+1,
 				speedFactor, fmt.Sprintf("%.2f", chapter.StartTime), fmt.Sprintf("%.2f", actualEndTime))
-			
+
 			segmentDuration := actualEndTime - chapter.StartTime
 			fadeDuration := 0.5
-			
+
 			// 組合濾鏡：速度調整 + 淡入淡出
-			filterComplex := fmt.Sprintf("setpts=%.4f*PTS,fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f", 
+			filterComplex := fmt.Sprintf("setpts=%.4f*PTS,fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				1.0/speedFactor, fadeDuration, segmentDuration-fadeDuration, fadeDuration)
-			
+
 			cmd := exec.Command("ffmpeg",
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
@@ -1990,16 +2113,16 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 
 		} else {
 			// 沒有音訊，只剪出影片（移除原音）+ 淡入淡出
-			log.Printf("Creating segment %d without audio with fade effects: %s to %s", i+1, 
+			log.Printf("Creating segment %d without audio with fade effects: %s to %s", i+1,
 				fmt.Sprintf("%.2f", chapter.StartTime), fmt.Sprintf("%.2f", actualEndTime))
-			
+
 			segmentDuration := actualEndTime - chapter.StartTime
 			fadeDuration := 0.5 // 淡入淡出 0.5 秒
-			
+
 			// 淡入淡出濾鏡
-			fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f", 
+			fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				fadeDuration, segmentDuration-fadeDuration, fadeDuration)
-			
+
 			cmd := exec.Command("ffmpeg",
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
@@ -2016,7 +2139,7 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 				log.Printf("Failed to create segment %d: %v, output: %s", i+1, err, string(output))
 				continue
 			}
-			
+
 			log.Printf("Segment %d created with fade effects", i+1)
 		}
 
@@ -2057,18 +2180,24 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 
 	// 如果有結尾圖片，加入結尾圖片和文字
 	log.Printf("Checking ending image: path=%s, message=%s", project.EndingImage, project.Story.FinalMessage)
-	
+
 	if project.EndingImage != "" && project.Story != nil && project.Story.FinalMessage != "" {
-		log.Printf("Adding ending image to video")
-		if err := addEndingImage(project, tempConcatPath, outputPath); err != nil {
-			log.Printf("Warning: Failed to add ending image: %v", err)
+		log.Printf("Adding ending image to video...")
+		// 使用一個新的臨時檔案來存儲帶有結尾的影片
+		videoWithEndingPath := filepath.Join(outputDir, "video_with_ending.mp4")
+
+		if err := addEndingImage(project, tempConcatPath, videoWithEndingPath); err != nil {
+			log.Printf("❌ Failed to add ending image: %v", err)
 			// 如果失敗，使用沒有結尾的版本
 			os.Rename(tempConcatPath, outputPath)
 		} else {
+			log.Printf("✅ Ending image added successfully")
+			// 成功加入結尾，將結果移動到最終輸出路徑
+			os.Rename(videoWithEndingPath, outputPath)
 			os.Remove(tempConcatPath)
 		}
 	} else {
-		log.Printf("No ending image or message, skipping. EndingImage=%s, FinalMessage=%v", 
+		log.Printf("No ending image or message, skipping. EndingImage=%s, FinalMessage=%v",
 			project.EndingImage, project.Story != nil && project.Story.FinalMessage != "")
 		os.Rename(tempConcatPath, outputPath)
 	}
@@ -2078,63 +2207,6 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 	projectsMutex.Unlock()
 
 	log.Printf("Created final video with TTS audio for project %s", project.ID)
-	return nil
-}
-
-func addEndingImage(project *Project, inputVideo, outputVideo string) error {
-	log.Printf("Adding ending image to video for project %s", project.ID)
-
-	outputDir := filepath.Dir(inputVideo)
-	
-	// 建立結尾圖片影片（5 秒）
-	endingVideoPath := filepath.Join(outputDir, "ending_video.mp4")
-	
-	// 在圖片上疊加文字，然後轉成 5 秒的影片 + 淡入效果
-	fadeDuration := 1.0 // 結尾淡入 1 秒
-	
-	textFilter := fmt.Sprintf("scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,drawtext=text='%s':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=h-100:box=1:boxcolor=black@0.5:boxborderw=10,fade=t=in:st=0:d=%.2f", 
-		strings.ReplaceAll(project.Story.FinalMessage, "'", "\\'"), fadeDuration)
-	
-	cmd := exec.Command("ffmpeg",
-		"-loop", "1",
-		"-i", project.EndingImage,
-		"-vf", textFilter,
-		"-t", "5",
-		"-c:v", "libx264",
-		"-pix_fmt", "yuv420p",
-		"-y",
-		endingVideoPath,
-	)
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to create ending video: %v, output: %s", err, string(output))
-	}
-
-	// 拼接原影片和結尾影片
-	listFile := filepath.Join(outputDir, "final_concat_list.txt")
-	f, err := os.Create(listFile)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	fmt.Fprintf(f, "file '%s'\n", filepath.Base(inputVideo))
-	fmt.Fprintf(f, "file '%s'\n", filepath.Base(endingVideoPath))
-
-	cmd = exec.Command("ffmpeg",
-		"-f", "concat",
-		"-safe", "0",
-		"-i", listFile,
-		"-c", "copy",
-		"-y",
-		outputVideo,
-	)
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to concat ending: %v, output: %s", err, string(output))
-	}
-
-	log.Printf("Added ending image for project %s", project.ID)
 	return nil
 }
 
@@ -2168,6 +2240,112 @@ func getVideoDuration(videoPath string) float64 {
 	return duration
 }
 
+func escapeFFmpegText(text string) string {
+	// FFmpeg drawtext 需要轉義特殊字符
+	text = strings.ReplaceAll(text, "\\", "\\\\")
+	text = strings.ReplaceAll(text, "'", "\\'")
+	text = strings.ReplaceAll(text, ":", "\\:")
+	text = strings.ReplaceAll(text, "[", "\\[")
+	text = strings.ReplaceAll(text, "]", "\\]")
+	return text
+}
+
+func generateOwnerMessageTTS(message, outputPath string) error {
+	log.Printf("Generating TTS for owner message: %s", message)
+
+	requestBody := map[string]interface{}{
+		"input": map[string]string{
+			"text": message,
+		},
+		"voice": map[string]interface{}{
+			"languageCode": "zh-TW",
+			"name":         "cmn-TW-Wavenet-C", // 台灣中文男聲
+			"ssmlGender":   "MALE",
+		},
+		"audioConfig": map[string]interface{}{
+			"audioEncoding": "MP3",
+			"speakingRate":  0.9,
+			"pitch":         -2.0, // 稍微低沉一點
+		},
+	}
+
+	return executeTTSRequest(requestBody, outputPath)
+}
+
+func generateDogResponseTTS(message, outputPath string) error {
+	log.Printf("Generating TTS for dog response: %s", message)
+
+	requestBody := map[string]interface{}{
+		"input": map[string]string{
+			"text": message,
+		},
+		"voice": map[string]interface{}{
+			"languageCode": "zh-TW",
+			"name":         "cmn-TW-Wavenet-A", // 台灣中文女聲（狗狗的聲音）
+			"ssmlGender":   "FEMALE",
+		},
+		"audioConfig": map[string]interface{}{
+			"audioEncoding": "MP3",
+			"speakingRate":  0.95,
+			"pitch":         2.0, // 稍微高一點，更可愛
+		},
+	}
+
+	return executeTTSRequest(requestBody, outputPath)
+}
+
+func executeTTSRequest(requestBody map[string]interface{}, outputPath string) error {
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal TTS request: %v", err)
+	}
+
+	url := fmt.Sprintf("https://texttospeech.googleapis.com/v1/text:synthesize?key=%s", aiAPIKey)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create TTS request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send TTS request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("TTS API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	var ttsResponse struct {
+		AudioContent string `json:"audioContent"`
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read TTS response: %v", err)
+	}
+
+	if err := json.Unmarshal(bodyBytes, &ttsResponse); err != nil {
+		return fmt.Errorf("failed to parse TTS response: %v", err)
+	}
+
+	audioData, err := base64.StdEncoding.DecodeString(ttsResponse.AudioContent)
+	if err != nil {
+		return fmt.Errorf("failed to decode audio: %v", err)
+	}
+
+	if err := os.WriteFile(outputPath, audioData, 0644); err != nil {
+		return fmt.Errorf("failed to write audio file: %v", err)
+	}
+
+	return nil
+}
+
 // 壓縮圖片到指定大小
 func compressImage(inputPath string, maxWidth, maxHeight int) ([]byte, error) {
 	// 使用 FFmpeg 壓縮圖片
@@ -2178,12 +2356,12 @@ func compressImage(inputPath string, maxWidth, maxHeight int) ([]byte, error) {
 		"-f", "image2",
 		"-",
 	)
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg compress error: %v", err)
 	}
-	
+
 	return output, nil
 }
 
@@ -2197,7 +2375,7 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	// 建立 SRT 字幕檔案
 	outputDir := filepath.Dir(inputVideo)
 	srtPath := filepath.Join(outputDir, "subtitles.srt")
-	
+
 	f, err := os.Create(srtPath)
 	if err != nil {
 		return fmt.Errorf("failed to create subtitle file: %v", err)
@@ -2207,17 +2385,17 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	// 生成 SRT 格式字幕
 	currentTime := 0.0
 	subtitleIndex := 1
-	
+
 	// 添加前 5 個影片的字幕（狗狗的對白）
 	for _, chapter := range project.Story.Chapters {
 		startTime := currentTime
 		endTime := currentTime + chapter.Duration
-		
+
 		// SRT 格式
 		fmt.Fprintf(f, "%d\n", subtitleIndex)
 		fmt.Fprintf(f, "%s --> %s\n", formatSRTTime(startTime), formatSRTTime(endTime))
 		fmt.Fprintf(f, "%s\n\n", chapter.Narration)
-		
+
 		currentTime = endTime
 		subtitleIndex++
 	}
@@ -2225,13 +2403,13 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	// 如果有結尾圖片和主人的話，添加結尾字幕
 	if project.EndingImage != "" && project.Story.OwnerMessage != "" {
 		endingDuration := 5.0
-		
+
 		// 主人的話（前 2.5 秒）
 		fmt.Fprintf(f, "%d\n", subtitleIndex)
 		fmt.Fprintf(f, "%s --> %s\n", formatSRTTime(currentTime), formatSRTTime(currentTime+2.5))
 		fmt.Fprintf(f, "主人：%s\n\n", project.Story.OwnerMessage)
 		subtitleIndex++
-		
+
 		// 狗狗的回應（後 2.5 秒）
 		if project.Story.DogResponse != "" {
 			fmt.Fprintf(f, "%d\n", subtitleIndex)
@@ -2243,7 +2421,7 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	// 使用 FFmpeg 將字幕燒錄到影片中
 	// 字幕樣式：白色文字、黑色邊框、底部居中
 	subtitleStyle := "FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=30"
-	
+
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
 		"-vf", fmt.Sprintf("subtitles=%s:force_style='%s'", srtPath, subtitleStyle),
@@ -2266,7 +2444,7 @@ func formatSRTTime(seconds float64) string {
 	minutes := int((seconds - float64(hours*3600)) / 60)
 	secs := int(seconds) % 60
 	millis := int((seconds - float64(int(seconds))) * 1000)
-	
+
 	return fmt.Sprintf("%02d:%02d:%02d,%03d", hours, minutes, secs, millis)
 }
 
@@ -2277,22 +2455,64 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 	outputDir := filepath.Dir(inputVideo)
 	musicPath := filepath.Join(outputDir, "background_music.mp3")
 
-	// 取得影片時長
-	videoDuration := getVideoDuration(inputVideo)
-	if videoDuration == 0 {
-		return fmt.Errorf("failed to get video duration")
+	// 先刪除舊的音樂文件（如果存在）
+	if _, err := os.Stat(musicPath); err == nil {
+		log.Printf("🗑️ Removing old background music file: %s", musicPath)
+		os.Remove(musicPath)
 	}
 
-	// 生成柔和的背景音樂
-	if err := generateBackgroundMusic(musicPath, videoDuration); err != nil {
-		return fmt.Errorf("failed to generate music: %v", err)
+	// 檢查是否有指定的背景音樂檔案
+	specificBGM := "./狗狗影片/bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3"
+	musicCopied := false
+	
+	log.Printf("🎵 Checking for specific BGM file: %s", specificBGM)
+	if stat, err := os.Stat(specificBGM); err == nil {
+		log.Printf("✅ Found specific BGM file: %s (size: %d bytes)", specificBGM, stat.Size())
+		
+		// 複製到輸出目錄以避免檔名問題
+		inputMusic, err := os.ReadFile(specificBGM)
+		if err == nil {
+			log.Printf("📖 Successfully read BGM file, size: %d bytes", len(inputMusic))
+			if err := os.WriteFile(musicPath, inputMusic, 0644); err != nil {
+				log.Printf("❌ Failed to copy BGM, falling back to generation: %v", err)
+			} else {
+				// 驗證寫入
+				if verifyStats, err := os.Stat(musicPath); err == nil {
+					log.Printf("✅ Successfully copied BGM to: %s (size: %d bytes)", musicPath, verifyStats.Size())
+					musicCopied = true
+				} else {
+					log.Printf("❌ Failed to verify copied BGM file: %v", err)
+				}
+			}
+		} else {
+			log.Printf("❌ Failed to read BGM, falling back to generation: %v", err)
+		}
+	} else {
+		log.Printf("❌ Specific BGM not found: %s, error: %v", specificBGM, err)
+	}
+
+	// 如果沒有複製成功，則生成
+	if !musicCopied {
+		// 取得影片時長
+		videoDuration := getVideoDuration(inputVideo)
+		if videoDuration == 0 {
+			return fmt.Errorf("failed to get video duration")
+		}
+
+		log.Printf("Generating background music with duration %.2fs", videoDuration)
+		// 生成柔和的背景音樂
+		if err := generateBackgroundMusic(musicPath, videoDuration); err != nil {
+			return fmt.Errorf("failed to generate music: %v", err)
+		}
 	}
 
 	// 將背景音樂與影片合併
+	// 用戶要求背景音樂音量 100% (volume=1.0)
+	// 原始影片音訊 (TTS) 音量保持 1.0
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
 		"-i", musicPath,
-		"-filter_complex", "[0:a]volume=1.0[a1];[1:a]volume=0.15[a2];[a1][a2]amix=inputs=2:duration=shortest[aout]",
+		"-filter_complex", "[0:a]volume=1.0[a1];[1:a]volume=1.0[a2];[a1][a2]amix=inputs=2:duration=shortest[aout]",
 		"-map", "0:v",
 		"-map", "[aout]",
 		"-c:v", "copy",
@@ -2316,7 +2536,7 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 			"-y",
 			outputVideo,
 		)
-		
+
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("ffmpeg music add error: %v, output: %s", err, string(output))
@@ -2330,7 +2550,7 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 func generateBackgroundMusic(outputPath string, duration float64) error {
 	// 生成溫柔的背景音樂
 	// 使用 C 大調和弦 (C-E-G)
-	
+
 	cmd := exec.Command("ffmpeg",
 		"-f", "lavfi",
 		"-i", fmt.Sprintf("sine=frequency=261.63:duration=%.2f", duration),

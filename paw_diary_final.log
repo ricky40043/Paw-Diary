@@ -1,0 +1,28 @@
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] GET    /                         --> main.main.(*RouterGroup).StaticFile.func14 (4 handlers)
+[GIN-debug] HEAD   /                         --> main.main.(*RouterGroup).StaticFile.func14 (4 handlers)
+[GIN-debug] GET    /storage/*filepath        --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /storage/*filepath        --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] POST   /api/v1/poc/jobs          --> main.main.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/poc/jobs/:jobId   --> main.main.func2 (4 handlers)
+[GIN-debug] GET    /api/v1/poc/jobs          --> main.main.func3 (4 handlers)
+[GIN-debug] GET    /api/health               --> main.main.func4 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects    --> main.main.func5 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/ending-image --> main.main.func6 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/owner-message --> main.main.func7 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/videos --> main.main.func8 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/generate --> main.main.func9 (4 handlers)
+[GIN-debug] GET    /api/v2/story/projects/:projectId --> main.main.func10 (4 handlers)
+[GIN-debug] GET    /api/v2/story/projects    --> main.main.func11 (4 handlers)
+2025/12/08 20:37:25 Server starting on port 8080
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+[GIN] 2025/12/08 - 20:37:33 | 200 |      51.084µs |             ::1 | GET      "/api/health"

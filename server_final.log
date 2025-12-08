@@ -1,0 +1,326 @@
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] GET    /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] GET    /                         --> main.main.(*RouterGroup).StaticFile.func14 (4 handlers)
+[GIN-debug] HEAD   /                         --> main.main.(*RouterGroup).StaticFile.func14 (4 handlers)
+[GIN-debug] GET    /storage/*filepath        --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] HEAD   /storage/*filepath        --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (4 handlers)
+[GIN-debug] POST   /api/v1/poc/jobs          --> main.main.func1 (4 handlers)
+[GIN-debug] GET    /api/v1/poc/jobs/:jobId   --> main.main.func2 (4 handlers)
+[GIN-debug] GET    /api/v1/poc/jobs          --> main.main.func3 (4 handlers)
+[GIN-debug] GET    /api/health               --> main.main.func4 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects    --> main.main.func5 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/ending-image --> main.main.func6 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/owner-message --> main.main.func7 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/videos --> main.main.func8 (4 handlers)
+[GIN-debug] POST   /api/v2/story/projects/:projectId/generate --> main.main.func9 (4 handlers)
+[GIN-debug] GET    /api/v2/story/projects/:projectId --> main.main.func10 (4 handlers)
+[GIN-debug] GET    /api/v2/story/projects    --> main.main.func11 (4 handlers)
+2025/12/08 20:38:18 Server starting on port 8080
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :8080
+[GIN] 2025/12/08 - 20:38:26 | 200 |      163.75µs |             ::1 | GET      "/api/health"
+[GIN] 2025/12/08 - 20:38:47 | 200 |     246.709µs |             ::1 | POST     "/api/v2/story/projects"
+[GIN] 2025/12/08 - 20:38:47 | 200 |  489.934625ms |             ::1 | POST     "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/videos"
+2025/12/08 20:38:47 Ending image saved for project 1203bae6-1768-4f75-a7c7-d21503850d0e: storage/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/ending_image.jpg
+[GIN] 2025/12/08 - 20:38:47 | 200 |     316.291µs |             ::1 | POST     "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/ending-image"
+[GIN] 2025/12/08 - 20:38:47 | 200 |        13.5µs |             ::1 | POST     "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/generate"
+2025/12/08 20:38:47 Processing project 1203bae6-1768-4f75-a7c7-d21503850d0e with 5 videos
+2025/12/08 20:38:47 Analyzing video 37f8fa8f-598c-4884-87d1-297ad3c76b05 (786639289.386967.mp4)
+2025/12/08 20:38:47 Owner message saved for project 1203bae6-1768-4f75-a7c7-d21503850d0e: 寶貝，謝謝你來到我的生命中，我會永遠愛你！
+[GIN] 2025/12/08 - 20:38:47 | 200 |          88µs |             ::1 | POST     "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/owner-message"
+[GIN] 2025/12/08 - 20:38:47 | 200 |      26.167µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:38:48 Extracted 12 frames from video 37f8fa8f-598c-4884-87d1-297ad3c76b05
+2025/12/08 20:38:48 Video 37f8fa8f-598c-4884-87d1-297ad3c76b05: Analyzing with 10 images (total frames: 12)
+2025/12/08 20:38:48 Successfully compressed 10 images for video 37f8fa8f-598c-4884-87d1-297ad3c76b05
+[GIN] 2025/12/08 - 20:38:52 | 200 |      147.25µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:38:56 ✅ Video 37f8fa8f-598c-4884-87d1-297ad3c76b05 analyzed: has_dog=true, has_human=true, interaction=cuddling, emotion=happy, caption=夜晚主人抱狗親暱互動，狗開心舔臉
+2025/12/08 20:38:56 Analyzed video 37f8fa8f-598c-4884-87d1-297ad3c76b05: 4 segments, 1 highlights
+2025/12/08 20:38:56 Analyzing video b339074a-e9ce-4afd-8b48-1663e73c3daa (786639326.131658.mp4)
+2025/12/08 20:38:56 Extracted 33 frames from video b339074a-e9ce-4afd-8b48-1663e73c3daa
+2025/12/08 20:38:56 Video b339074a-e9ce-4afd-8b48-1663e73c3daa: Analyzing with 10 images (total frames: 33)
+2025/12/08 20:38:57 Successfully compressed 10 images for video b339074a-e9ce-4afd-8b48-1663e73c3daa
+[GIN] 2025/12/08 - 20:38:57 | 200 |     235.042µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:02 | 200 |     246.709µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:04 ✅ Video b339074a-e9ce-4afd-8b48-1663e73c3daa analyzed: has_dog=true, has_human=true, interaction=playing, emotion=happy, caption=小狗在床上與主人玩耍，最後被抱入狗窩
+2025/12/08 20:39:04 Analyzed video b339074a-e9ce-4afd-8b48-1663e73c3daa: 11 segments, 1 highlights
+2025/12/08 20:39:04 Analyzing video 407f3fb0-a389-458f-9a63-b2969d876e6b (786639326.180172.mp4)
+2025/12/08 20:39:04 Extracted 11 frames from video 407f3fb0-a389-458f-9a63-b2969d876e6b
+2025/12/08 20:39:04 Video 407f3fb0-a389-458f-9a63-b2969d876e6b: Analyzing with 10 images (total frames: 11)
+2025/12/08 20:39:04 Successfully compressed 10 images for video 407f3fb0-a389-458f-9a63-b2969d876e6b
+[GIN] 2025/12/08 - 20:39:07 | 200 |      88.375µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:09 ✅ Video 407f3fb0-a389-458f-9a63-b2969d876e6b analyzed: has_dog=true, has_human=true, interaction=cuddling, emotion=calm, caption=狗狗在主人懷中安穩休息
+2025/12/08 20:39:09 Analyzed video 407f3fb0-a389-458f-9a63-b2969d876e6b: 4 segments, 1 highlights
+2025/12/08 20:39:09 Analyzing video d0fb4d66-d05e-4852-81d1-ebf871737014 (786648877.005224.mp4)
+2025/12/08 20:39:10 Extracted 15 frames from video d0fb4d66-d05e-4852-81d1-ebf871737014
+2025/12/08 20:39:10 Video d0fb4d66-d05e-4852-81d1-ebf871737014: Analyzing with 10 images (total frames: 15)
+2025/12/08 20:39:10 Successfully compressed 10 images for video d0fb4d66-d05e-4852-81d1-ebf871737014
+[GIN] 2025/12/08 - 20:39:12 | 200 |     353.917µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:17 | 200 |     460.625µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:17 ✅ Video d0fb4d66-d05e-4852-81d1-ebf871737014 analyzed: has_dog=true, has_human=true, interaction=playing, emotion=excited, caption=活潑小狗與主人玩耍互動
+2025/12/08 20:39:17 Analyzed video d0fb4d66-d05e-4852-81d1-ebf871737014: 5 segments, 1 highlights
+2025/12/08 20:39:17 Analyzing video 019a818a-af7b-4079-8b4c-f536fd4e82ea (786648896.976533.mp4)
+2025/12/08 20:39:18 Extracted 20 frames from video 019a818a-af7b-4079-8b4c-f536fd4e82ea
+2025/12/08 20:39:18 Video 019a818a-af7b-4079-8b4c-f536fd4e82ea: Analyzing with 10 images (total frames: 20)
+2025/12/08 20:39:19 Successfully compressed 10 images for video 019a818a-af7b-4079-8b4c-f536fd4e82ea
+[GIN] 2025/12/08 - 20:39:22 | 200 |     478.583µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:23 ✅ Video 019a818a-af7b-4079-8b4c-f536fd4e82ea analyzed: has_dog=true, has_human=true, interaction=cuddling, emotion=happy, caption=人狗開車出遊，狗狗開心依偎
+2025/12/08 20:39:23 Analyzed video 019a818a-af7b-4079-8b4c-f536fd4e82ea: 7 segments, 1 highlights
+2025/12/08 20:39:23 ✅ Successfully analyzed 5/5 videos
+2025/12/08 20:39:23 Generating story for project 1203bae6-1768-4f75-a7c7-d21503850d0e with AI
+[GIN] 2025/12/08 - 20:39:27 | 200 |      414.75µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:32 Story AI response content: {
+  "title": "給主人的告白",
+  "chapters": [
+    {
+      "narration": "主人，你的笑容是我的陽光。我最喜歡親親你，把所有的愛都舔給你，讓你感受我的開心！",
+      "video_index": 0,
+      "highlight_index": 0
+    },
+    {
+      "narration": "和你一起在床上玩耍，是我一天中最棒的時光！即使被抱回窩，我也知道你會一直在身邊。",
+      "video_index": 1,
+      "highlight_index": 0
+    },
+    {
+      "narration": "在你溫暖的懷抱裡，我感到前所未有的安心。世界再大，有你抱著，就是我最平靜的港灣。",
+      "video_index": 2,
+      "highlight_index": 0
+    },
+    {
+      "narration": "每次你陪我玩，我的心都快要跳出來了！奔跑、追逐，有你在，我的世界永遠充滿驚喜和活力！",
+      "video_index": 3,
+      "highlight_index": 0
+    },
+    {
+      "narration": "無論去哪，只要有你在，就是最美的旅程。主人，你是我生命中最珍貴的禮物，我永遠愛你。",
+      "video_index": 4,
+      "highlight_index": 0
+    }
+  ]
+}
+2025/12/08 20:39:32 Generated story with 5 chapters
+2025/12/08 20:39:32 Generating dog response for project 1203bae6-1768-4f75-a7c7-d21503850d0e
+[GIN] 2025/12/08 - 20:39:32 | 200 |     448.708µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:36 Warning: Failed to generate dog response: no response from AI
+2025/12/08 20:39:36 Generating TTS for chapter 1: 主人，你的笑容是我的陽光。我最喜歡親親你，把所有的愛都舔給你，讓你感受我的開心！
+2025/12/08 20:39:36 Warning: TTS generation failed for chapter 0: TTS API error 403: {
+  "error": {
+    "code": 403,
+    "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+    "status": "PERMISSION_DENIED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "SERVICE_DISABLED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "serviceTitle": "Cloud Text-to-Speech API",
+          "service": "texttospeech.googleapis.com",
+          "containerInfo": "257160429328",
+          "consumer": "projects/257160429328",
+          "activationUrl": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Google developers console API activation",
+            "url": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+          }
+        ]
+      }
+    ]
+  }
+}
+2025/12/08 20:39:36 Generating TTS for chapter 2: 和你一起在床上玩耍，是我一天中最棒的時光！即使被抱回窩，我也知道你會一直在身邊。
+2025/12/08 20:39:36 Warning: TTS generation failed for chapter 1: TTS API error 403: {
+  "error": {
+    "code": 403,
+    "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+    "status": "PERMISSION_DENIED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "SERVICE_DISABLED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "activationUrl": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328",
+          "consumer": "projects/257160429328",
+          "containerInfo": "257160429328",
+          "service": "texttospeech.googleapis.com",
+          "serviceTitle": "Cloud Text-to-Speech API"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Google developers console API activation",
+            "url": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+          }
+        ]
+      }
+    ]
+  }
+}
+2025/12/08 20:39:36 Generating TTS for chapter 3: 在你溫暖的懷抱裡，我感到前所未有的安心。世界再大，有你抱著，就是我最平靜的港灣。
+2025/12/08 20:39:36 Warning: TTS generation failed for chapter 2: TTS API error 403: {
+  "error": {
+    "code": 403,
+    "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+    "status": "PERMISSION_DENIED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "SERVICE_DISABLED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "containerInfo": "257160429328",
+          "serviceTitle": "Cloud Text-to-Speech API",
+          "activationUrl": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328",
+          "service": "texttospeech.googleapis.com",
+          "consumer": "projects/257160429328"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Google developers console API activation",
+            "url": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+          }
+        ]
+      }
+    ]
+  }
+}
+2025/12/08 20:39:36 Generating TTS for chapter 4: 每次你陪我玩，我的心都快要跳出來了！奔跑、追逐，有你在，我的世界永遠充滿驚喜和活力！
+2025/12/08 20:39:36 Warning: TTS generation failed for chapter 3: TTS API error 403: {
+  "error": {
+    "code": 403,
+    "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+    "status": "PERMISSION_DENIED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "SERVICE_DISABLED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "activationUrl": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328",
+          "containerInfo": "257160429328",
+          "consumer": "projects/257160429328",
+          "service": "texttospeech.googleapis.com",
+          "serviceTitle": "Cloud Text-to-Speech API"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Google developers console API activation",
+            "url": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+          }
+        ]
+      }
+    ]
+  }
+}
+2025/12/08 20:39:36 Generating TTS for chapter 5: 無論去哪，只要有你在，就是最美的旅程。主人，你是我生命中最珍貴的禮物，我永遠愛你。
+2025/12/08 20:39:36 Warning: TTS generation failed for chapter 4: TTS API error 403: {
+  "error": {
+    "code": 403,
+    "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry.",
+    "status": "PERMISSION_DENIED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "SERVICE_DISABLED",
+        "domain": "googleapis.com",
+        "metadata": {
+          "activationUrl": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328",
+          "consumer": "projects/257160429328",
+          "containerInfo": "257160429328",
+          "service": "texttospeech.googleapis.com",
+          "serviceTitle": "Cloud Text-to-Speech API"
+        }
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.LocalizedMessage",
+        "locale": "en-US",
+        "message": "Cloud Text-to-Speech API has not been used in project 257160429328 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+      },
+      {
+        "@type": "type.googleapis.com/google.rpc.Help",
+        "links": [
+          {
+            "description": "Google developers console API activation",
+            "url": "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=257160429328"
+          }
+        ]
+      }
+    ]
+  }
+}
+2025/12/08 20:39:36 Compositing final video for project 1203bae6-1768-4f75-a7c7-d21503850d0e (with transitions, subtitles and music)
+2025/12/08 20:39:36 Step 1: Creating video segments with transitions and TTS audio
+2025/12/08 20:39:36 Creating video segments with fade transitions and TTS audio
+[GIN] 2025/12/08 - 20:39:37 | 200 |     978.625µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:42 | 200 |     234.292µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:47 | 200 |     126.791µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:39:49 ✅ Created video with transitions and TTS audio
+2025/12/08 20:39:49 Step 2: Adding ending image with dog response
+2025/12/08 20:39:49 Adding ending image with owner message and dog response
+2025/12/08 20:39:49 Generating TTS for owner message: 寶貝，謝謝你來到我的生命中，我會永遠愛你！
+2025/12/08 20:39:49 Generating TTS for dog response: 主人，我愛你！
+2025/12/08 20:39:49 Ending without audio - using fixed duration: 10.00s
+2025/12/08 20:39:51 ✅ Added ending image with duration 10.00s
+2025/12/08 20:39:51 Step 3: Adding subtitles
+2025/12/08 20:39:51 Adding subtitles to video for project 1203bae6-1768-4f75-a7c7-d21503850d0e
+[GIN] 2025/12/08 - 20:39:52 | 200 |     273.833µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:57 | 200 |     247.667µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:39:58 | 200 |       279.5µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:40:02 | 200 |       229.5µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:40:07 | 200 |     117.166µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+2025/12/08 20:40:07 ✅ Added subtitles for project 1203bae6-1768-4f75-a7c7-d21503850d0e (including ending)
+2025/12/08 20:40:07 Step 4: Adding background music
+2025/12/08 20:40:07 Adding background music to video for project 1203bae6-1768-4f75-a7c7-d21503850d0e
+2025/12/08 20:40:07 🎵 Checking for specific BGM file: ./狗狗影片/bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3
+2025/12/08 20:40:07 ✅ Found specific BGM file: ./狗狗影片/bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3 (size: 5214241 bytes)
+2025/12/08 20:40:08 📖 Successfully read BGM file, size: 5214241 bytes
+2025/12/08 20:40:08 ✅ Successfully copied BGM to: storage/projects/1203bae6-1768-4f75-a7c7-d21503850d0e/background_music.mp3 (size: 5214241 bytes)
+2025/12/08 20:40:08 Audio mix failed, trying direct add: exit status 234
+2025/12/08 20:40:08 Added background music for project 1203bae6-1768-4f75-a7c7-d21503850d0e
+2025/12/08 20:40:08 ✅ Created final video with all effects for project 1203bae6-1768-4f75-a7c7-d21503850d0e
+2025/12/08 20:40:08 Project 1203bae6-1768-4f75-a7c7-d21503850d0e completed successfully
+[GIN] 2025/12/08 - 20:40:12 | 200 |     480.083µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:40:34 | 200 |     317.167µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 20:41:12 | 200 |     120.375µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"
+[GIN] 2025/12/08 - 21:06:48 | 200 |     901.292µs |             ::1 | GET      "/api/v2/story/projects/1203bae6-1768-4f75-a7c7-d21503850d0e"

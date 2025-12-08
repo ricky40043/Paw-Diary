@@ -90,13 +90,41 @@
             :disabled="!endingImage || uploadingImage"
             class="btn-primary"
           >
-            {{ uploadingImage ? '上傳中...' : '完成並生成' }}
+            {{ uploadingImage ? '上傳中...' : '下一步' }}
           </button>
         </div>
       </div>
 
-      <!-- Step 4: 處理中 -->
-      <div v-if="currentStep === 4" class="step-card processing">
+      <!-- Step 4: 主人留言 -->
+      <div v-if="currentStep === 4" class="step-card">
+        <h2>步驟 4：給狗狗的話</h2>
+        <p class="hint">寫下你想對狗狗說的話，這將會成為影片中感人的一幕</p>
+        
+        <div class="form-group">
+          <label>給寶貝的一句話 *</label>
+          <textarea 
+            v-model="ownerMessage" 
+            rows="4" 
+            placeholder="例如：謝謝你來到我的生命中，你是我最好的朋友..." 
+            class="message-input"
+            required
+          ></textarea>
+        </div>
+        
+        <div class="actions">
+          <button @click="currentStep = 3" class="btn-secondary">上一步</button>
+          <button 
+            @click="submitOwnerMessage" 
+            :disabled="!ownerMessage.trim() || submittingMessage"
+            class="btn-primary"
+          >
+            {{ submittingMessage ? '處理中...' : '開始生成影片' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 5: 處理中 -->
+      <div v-if="currentStep === 5" class="step-card processing">
         <div class="spinner"></div>
         <h2>✨ AI 正在創作中...</h2>
         <p>{{ statusMessage }}</p>
@@ -105,8 +133,8 @@
         </div>
       </div>
 
-      <!-- Step 5: 完成 -->
-      <div v-if="currentStep === 5" class="step-card completed">
+      <!-- Step 6: 完成 -->
+      <div v-if="currentStep === 6" class="step-card completed">
         <h2>🎉 完成！</h2>
         <div v-if="result" class="result">
           <h3>{{ result.story.title }}</h3>
@@ -145,7 +173,10 @@ import axios from 'axios'
 const currentStep = ref(1)
 const dogName = ref('')
 const dogBreed = ref('')
+const dogBreed = ref('')
 const projectId = ref('')
+const ownerMessage = ref('')
+const submittingMessage = ref(false)
 const videos = ref([null, null, null, null, null])
 const selectedVideoIndex = ref(-1)
 const videoInput = ref(null)
@@ -243,15 +274,31 @@ const uploadImage = async () => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    // 開始生成
-    await axios.post(`/api/v2/story/projects/${projectId.value}/generate`)
-    
     currentStep.value = 4
-    pollProgress()
   } catch (error) {
-    alert('處理失敗：' + (error.response?.data?.error || error.message))
+    alert('上傳圖片失敗：' + (error.response?.data?.error || error.message))
   } finally {
     uploadingImage.value = false
+  }
+}
+
+const submitOwnerMessage = async () => {
+  submittingMessage.value = true
+  try {
+    // 1. 設定主人留言
+    await axios.post(`/api/v2/story/projects/${projectId.value}/owner-message`, {
+      message: ownerMessage.value
+    })
+
+    // 2. 開始生成
+    await axios.post(`/api/v2/story/projects/${projectId.value}/generate`)
+    
+    currentStep.value = 5
+    pollProgress()
+  } catch (error) {
+    alert('提交失敗：' + (error.response?.data?.error || error.message))
+  } finally {
+    submittingMessage.value = false
   }
 }
 
@@ -274,8 +321,9 @@ const pollProgress = async () => {
         clearInterval(interval)
         progress.value = 100
         result.value = response.data
+        result.value = response.data
         setTimeout(() => {
-          currentStep.value = 5
+          currentStep.value = 6
         }, 500)
       } else if (status === 'failed') {
         clearInterval(interval)
@@ -293,6 +341,7 @@ const reset = () => {
   dogName.value = ''
   dogBreed.value = ''
   projectId.value = ''
+  ownerMessage.value = ''
   videos.value = [null, null, null, null, null]
   endingImage.value = null
   imagePreview.value = ''
@@ -365,9 +414,20 @@ h2 {
   font-size: 1rem;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group textarea:focus {
   outline: none;
   border-color: #667eea;
+}
+
+.message-input {
+  width: 100%;
+  padding: 0.8rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  resize: vertical;
+  font-family: inherit;
 }
 
 .video-uploads {
