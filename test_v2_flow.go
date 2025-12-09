@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -19,13 +21,13 @@ const (
 func main() {
 	fmt.Println("🚀 Starting Phase 2 Integration Test")
 
-	// 1. Create Project
-	projectID, err := createProject("Test Dog", "Golden Retriever")
+	// 1. Create Project (with relationship: 媽媽)
+	projectID, err := createProject("Test Dog", "Golden Retriever", "媽媽")
 	if err != nil {
 		fmt.Printf("❌ Failed to create project: %v\n", err)
 		return
 	}
-	fmt.Printf("✅ Project created: %s\n", projectID)
+	fmt.Printf("✅ Project created: %s (relationship: 媽媽)\n", projectID)
 
 	// 2. Upload Videos (using dummy files)
 	// Create dummy video files if they don't exist
@@ -53,7 +55,7 @@ func main() {
 	fmt.Println("✅ Videos uploaded")
 
 	// 3. Upload Ending Image
-	dummyImage := "test_image.jpg"
+	dummyImage := "./狗狗影片/S__19439640.jpg"
 	if _, err := os.Stat(dummyImage); os.IsNotExist(err) {
 		// Check for any jpg/png
 		files, _ := filepath.Glob("*.jpg")
@@ -85,15 +87,20 @@ func main() {
 	}
 	fmt.Println("✅ Story generation started")
 
-	// 5. Wait for 'generating_story' status (or completed if fast)
-	// Actually we need to wait until it's done analyzing to set owner message?
-	// The API allows setting owner message anytime. Let's set it now.
+	// 4. Set Owner Message (Optional)
+	fmt.Println("📝 Setting owner message...")
+	message := "寶貝媽媽永遠愛你，不管你老了病了以後到汪星球了，媽媽都永遠記得你，你是我的寶貝"
+	relationship := "媽媽"
 
-	// 6. Set Owner Message
-	if err := setOwnerMessage(projectID, "寶貝，謝謝你來到我的生命中，我會永遠愛你！"); err != nil {
-		fmt.Printf("❌ Failed to set owner message: %v\n", err)
-		return
+	msgData := url.Values{}
+	msgData.Set("message", message)
+	msgData.Set("relationship", relationship)
+
+	resp, err := http.PostForm(fmt.Sprintf("%s/%s/owner-message", baseURL, projectID), msgData) // Corrected URL format
+	if err != nil {
+		log.Fatalf("Failed to set owner message: %v", err)
 	}
+	defer resp.Body.Close()
 	fmt.Println("✅ Owner message set")
 
 	// 7. Poll for completion
@@ -124,11 +131,12 @@ func main() {
 	fmt.Printf("✅ Test finished. Please check http://localhost:8080/api/v2/story/projects/%s for results.\n", projectID)
 }
 
-func createProject(dogName, dogBreed string) (string, error) {
+func createProject(dogName, dogBreed, ownerRelationship string) (string, error) {
 	data := map[string]string{
-		"name":      "Test Project",
-		"dog_name":  dogName,
-		"dog_breed": dogBreed,
+		"name":               "Test Project",
+		"dog_name":           dogName,
+		"dog_breed":          dogBreed,
+		"owner_relationship": ownerRelationship,
 	}
 	jsonData, _ := json.Marshal(data)
 
@@ -154,13 +162,13 @@ func uploadVideos(projectID, videoPath string) error {
 
 	// Try to find videos from 狗狗影片 folder first, then from root
 	videoFiles := []string{}
-	
+
 	// First, check 狗狗影片 folder
 	dogVideos, _ := filepath.Glob("./狗狗影片/*.mp4")
 	for _, f := range dogVideos {
 		videoFiles = append(videoFiles, f)
 	}
-	
+
 	// If not enough, add from root folder
 	if len(videoFiles) < 5 {
 		rootVideos, _ := filepath.Glob("*.mp4")
@@ -177,7 +185,7 @@ func uploadVideos(projectID, videoPath string) error {
 	for i := 0; i < 5 && i < len(videoFiles); i++ {
 		finalList = append(finalList, videoFiles[i])
 	}
-	
+
 	// If we still don't have 5 videos, reuse from the beginning
 	for len(finalList) < 5 {
 		if len(videoFiles) > 0 {
