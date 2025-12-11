@@ -2038,10 +2038,12 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	log.Printf("Adding ending image with dog response (concat approach)")
 
 	outputDir := filepath.Dir(inputVideo)
-	endingDuration := 10.0 // 結尾 10 秒
+	endingDuration := 15.0 // 結尾 15 秒
 
 	// 準備狗狗回應文字（直接是狗狗視角的話，不加名字前綴）
 	dogText := project.Story.DogResponse
+	// 先把段落中的 "\n\n" 正規化成單一 "\n"，避免間距過大
+	dogText = strings.ReplaceAll(dogText, "\n\n", "\n")
 	// 為了避免文字太長被左右切掉，先做簡單斷行（大約每行 22 個字）
 	dogText = wrapTextForFFmpeg(dogText, 22)
 
@@ -2100,7 +2102,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 			fontFile,
 			escapeFFmpegText(dogText),
 			fontSize,
-			height/5, // y position relative to height
+			height/3, // y position: leave roughly bottom third for text
 			endingDuration-0.5,
 		),
 		"-t", fmt.Sprintf("%.2f", endingDuration),
