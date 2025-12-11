@@ -4,25 +4,96 @@
       <h1>💝 給主人的告白</h1>
       <p class="subtitle">上傳 5 個狗狗影片，讓 AI 創作感人的愛的告白</p>
 
-      <!-- Step 1: 狗狗資訊 -->
+      <!-- 步驟指示器 -->
+      <div class="step-indicator">
+        <div v-for="i in 6" :key="i" :class="['step-dot', { active: currentStep >= i, current: currentStep === i }]">
+          <span class="step-num">{{ i }}</span>
+        </div>
+      </div>
+
+      <!-- Step 1: 選擇風格模式 -->
       <div v-if="currentStep === 1" class="step-card">
-        <h2>步驟 1：狗狗資訊</h2>
+        <h2>步驟 1：選擇影片風格</h2>
+        <p class="hint">選擇一個風格，AI 會根據風格創作不同的狗狗對白</p>
+        
+        <div class="mode-selector">
+          <div 
+            v-for="mode in storyModes" 
+            :key="mode.value"
+            :class="['mode-card', { selected: storyMode === mode.value }]"
+            @click="storyMode = mode.value"
+          >
+            <div class="mode-icon">{{ mode.icon }}</div>
+            <div class="mode-name">{{ mode.name }}</div>
+            <div class="mode-desc">{{ mode.desc }}</div>
+          </div>
+        </div>
+        
+        <div class="actions">
+          <button 
+            @click="goToStep2" 
+            :disabled="!storyMode"
+            class="btn-primary"
+          >
+            下一步
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 2: 狗狗資訊和關係 -->
+      <div v-if="currentStep === 2" class="step-card">
+        <h2>步驟 2：狗狗資訊</h2>
         <form @submit.prevent="createProject">
           <div class="form-group">
-            <label>狗狗名字 *</label>
-            <input v-model="dogName" type="text" placeholder="例如：豆豆" required />
+            <label>狗狗名字 * <span class="char-count">{{ dogName.length }}/10</span></label>
+            <input 
+              v-model="dogName" 
+              type="text" 
+              placeholder="例如：豆豆" 
+              maxlength="10"
+              required 
+            />
+            <p v-if="dogName.length === 0" class="error-hint">請輸入狗狗名字</p>
           </div>
           <div class="form-group">
-            <label>品種（可選）</label>
-            <input v-model="dogBreed" type="text" placeholder="例如：吉娃娃" />
+            <label>品種（可選）<span class="char-count">{{ dogBreed.length }}/20</span></label>
+            <input 
+              v-model="dogBreed" 
+              type="text" 
+              placeholder="例如：吉娃娃" 
+              maxlength="20"
+            />
           </div>
-          <button type="submit" class="btn-primary">下一步</button>
+          <div class="form-group">
+            <label>你和狗狗的關係 *</label>
+            <div class="relation-selector">
+              <div 
+                v-for="rel in relations" 
+                :key="rel"
+                :class="['relation-chip', { selected: ownerRelationship === rel }]"
+                @click="ownerRelationship = rel"
+              >
+                {{ rel }}
+              </div>
+            </div>
+            <p v-if="!ownerRelationship" class="error-hint">請選擇你和狗狗的關係</p>
+          </div>
+          <div class="actions">
+            <button type="button" @click="currentStep = 1" class="btn-secondary">上一步</button>
+            <button 
+              type="submit" 
+              :disabled="!canProceedStep2"
+              class="btn-primary"
+            >
+              下一步
+            </button>
+          </div>
         </form>
       </div>
 
-      <!-- Step 2: 上傳 5 個影片 -->
-      <div v-if="currentStep === 2" class="step-card">
-        <h2>步驟 2：上傳 5 個影片</h2>
+      <!-- Step 3: 上傳 5 個影片 -->
+      <div v-if="currentStep === 3" class="step-card">
+        <h2>步驟 3：上傳 5 個影片</h2>
         <p class="hint">每個影片會被剪輯成約 15 秒，請選擇與狗狗互動的溫馨片段</p>
         
         <div class="video-uploads">
@@ -36,7 +107,7 @@
               <div class="icon">✅</div>
               <p class="name">{{ videos[i-1].name }}</p>
               <p class="size">{{ formatFileSize(videos[i-1].size) }}</p>
-              <button @click="removeVideo(i-1)" class="btn-remove">移除</button>
+              <button type="button" @click="removeVideo(i-1)" class="btn-remove">移除</button>
             </div>
           </div>
         </div>
@@ -48,11 +119,13 @@
           style="display: none"
         />
         
+        <p class="upload-hint">已選擇 {{ videoCount }}/5 個影片</p>
+        
         <div class="actions">
-          <button @click="currentStep = 1" class="btn-secondary">上一步</button>
+          <button @click="currentStep = 2" class="btn-secondary">上一步</button>
           <button 
             @click="uploadVideos" 
-            :disabled="videos.filter(v => v).length < 5 || uploading"
+            :disabled="videoCount < 5 || uploading"
             class="btn-primary"
           >
             {{ uploading ? '上傳中...' : '上傳影片' }}
@@ -60,9 +133,9 @@
         </div>
       </div>
 
-      <!-- Step 3: 上傳結尾圖片 -->
-      <div v-if="currentStep === 3" class="step-card">
-        <h2>步驟 3：上傳結尾圖片</h2>
+      <!-- Step 4: 上傳結尾圖片 -->
+      <div v-if="currentStep === 4" class="step-card">
+        <h2>步驟 4：上傳結尾圖片</h2>
         <p class="hint">選擇一張狗狗的照片作為影片結尾</p>
         
         <div class="image-upload">
@@ -72,7 +145,7 @@
           </div>
           <div v-else class="image-preview">
             <img :src="imagePreview" alt="結尾圖片" />
-            <button @click="removeImage" class="btn-remove">更換圖片</button>
+            <button type="button" @click="removeImage" class="btn-remove">更換圖片</button>
           </div>
         </div>
         <input 
@@ -84,7 +157,7 @@
         />
         
         <div class="actions">
-          <button @click="currentStep = 2" class="btn-secondary">上一步</button>
+          <button @click="currentStep = 3" class="btn-secondary">上一步</button>
           <button 
             @click="uploadImage" 
             :disabled="!endingImage || uploadingImage"
@@ -95,27 +168,30 @@
         </div>
       </div>
 
-      <!-- Step 4: 主人留言 -->
-      <div v-if="currentStep === 4" class="step-card">
-        <h2>步驟 4：給狗狗的話</h2>
+      <!-- Step 5: 主人留言 -->
+      <div v-if="currentStep === 5" class="step-card">
+        <h2>步驟 5：給狗狗的話</h2>
         <p class="hint">寫下你想對狗狗說的話，這將會成為影片中感人的一幕</p>
         
         <div class="form-group">
-          <label>給寶貝的一句話 *</label>
+          <label>給寶貝的一句話 * <span class="char-count">{{ ownerMessage.length }}/100</span></label>
           <textarea 
             v-model="ownerMessage" 
             rows="4" 
             placeholder="例如：謝謝你來到我的生命中，你是我最好的朋友..." 
             class="message-input"
+            maxlength="100"
             required
           ></textarea>
+          <p v-if="ownerMessage.length === 0" class="error-hint">請輸入給狗狗的話</p>
+          <p v-else-if="ownerMessage.length < 10" class="error-hint">至少輸入 10 個字</p>
         </div>
         
         <div class="actions">
-          <button @click="currentStep = 3" class="btn-secondary">上一步</button>
+          <button @click="currentStep = 4" class="btn-secondary">上一步</button>
           <button 
             @click="submitOwnerMessage" 
-            :disabled="!ownerMessage.trim() || submittingMessage"
+            :disabled="!canSubmitMessage || submittingMessage"
             class="btn-primary"
           >
             {{ submittingMessage ? '處理中...' : '開始生成影片' }}
@@ -123,8 +199,8 @@
         </div>
       </div>
 
-      <!-- Step 5: 處理中 -->
-      <div v-if="currentStep === 5" class="step-card processing">
+      <!-- Step 6: 處理中 -->
+      <div v-if="currentStep === 6" class="step-card processing">
         <div class="spinner"></div>
         <h2>✨ AI 正在創作中...</h2>
         <p>{{ statusMessage }}</p>
@@ -133,19 +209,19 @@
         </div>
       </div>
 
-      <!-- Step 6: 完成 -->
-      <div v-if="currentStep === 6" class="step-card completed">
+      <!-- Step 7: 完成 -->
+      <div v-if="currentStep === 7" class="step-card completed">
         <h2>🎉 完成！</h2>
         <div v-if="result" class="result">
-          <h3>{{ result.story.title }}</h3>
-          <div class="chapters">
+          <h3>{{ result.story?.title || '給主人的告白' }}</h3>
+          <div class="chapters" v-if="result.story?.chapters">
             <div v-for="(chapter, index) in result.story.chapters" :key="index" class="chapter">
               <span class="index">{{ index + 1 }}</span>
               <p>{{ chapter.narration }}</p>
             </div>
           </div>
-          <div class="final-message">
-            <p>💝 {{ result.story.final_message }}</p>
+          <div v-if="result.story?.dog_response" class="final-message">
+            <p>💝 {{ result.story.dog_response }}</p>
           </div>
           
           <div class="video-player">
@@ -170,35 +246,79 @@
 import { ref, computed } from 'vue'
 import axios from 'axios'
 
+// 步驟狀態
 const currentStep = ref(1)
+
+// Step 1: 風格模式
+const storyMode = ref('')
+const storyModes = [
+  { value: 'warm', name: '溫馨感人', icon: '💝', desc: '溫柔感性、充滿愛的表達' },
+  { value: 'cute', name: '可愛活潑', icon: '🐾', desc: '活潑撒嬌、充滿元氣' },
+  { value: 'funny', name: '幽默風趣', icon: '😆', desc: '搞笑幽默、逗趣可愛' }
+]
+
+// Step 2: 狗狗資訊
 const dogName = ref('')
 const dogBreed = ref('')
-const dogBreed = ref('')
-const projectId = ref('')
-const ownerMessage = ref('')
-const submittingMessage = ref(false)
+const ownerRelationship = ref('')
+const relations = ['爸爸', '媽媽', '哥哥', '姊姊', '弟弟', '妹妹', '主人', '爺爺', '奶奶']
+
+// Step 3: 影片
 const videos = ref([null, null, null, null, null])
 const selectedVideoIndex = ref(-1)
 const videoInput = ref(null)
 const uploading = ref(false)
+
+// Step 4: 圖片
 const endingImage = ref(null)
 const imagePreview = ref('')
 const imageInput = ref(null)
 const uploadingImage = ref(false)
+
+// Step 5: 留言
+const ownerMessage = ref('')
+const submittingMessage = ref(false)
+
+// 專案
+const projectId = ref('')
 const statusMessage = ref('')
 const progress = ref(0)
 const result = ref(null)
 
+// 計算屬性
+const canProceedStep2 = computed(() => {
+  return dogName.value.trim().length > 0 && ownerRelationship.value !== ''
+})
+
+const videoCount = computed(() => {
+  return videos.value.filter(v => v).length
+})
+
+const canSubmitMessage = computed(() => {
+  return ownerMessage.value.trim().length >= 10
+})
+
+// 方法
+const goToStep2 = () => {
+  if (storyMode.value) {
+    currentStep.value = 2
+  }
+}
+
 const createProject = async () => {
+  if (!canProceedStep2.value) return
+  
   try {
     const response = await axios.post('/api/v2/story/projects', {
       name: `${dogName.value}的告白`,
       dog_name: dogName.value,
-      dog_breed: dogBreed.value
+      dog_breed: dogBreed.value,
+      owner_relationship: ownerRelationship.value,
+      story_mode: storyMode.value
     })
     
     projectId.value = response.data.project_id
-    currentStep.value = 2
+    currentStep.value = 3
   } catch (error) {
     alert('建立專案失敗：' + (error.response?.data?.error || error.message))
   }
@@ -241,7 +361,7 @@ const uploadVideos = async () => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    currentStep.value = 3
+    currentStep.value = 4
   } catch (error) {
     alert('上傳影片失敗：' + (error.response?.data?.error || error.message))
   } finally {
@@ -266,7 +386,6 @@ const uploadImage = async () => {
   uploadingImage.value = true
   
   try {
-    // 上傳結尾圖片
     const formData = new FormData()
     formData.append('image', endingImage.value)
     
@@ -274,7 +393,7 @@ const uploadImage = async () => {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    currentStep.value = 4
+    currentStep.value = 5
   } catch (error) {
     alert('上傳圖片失敗：' + (error.response?.data?.error || error.message))
   } finally {
@@ -283,17 +402,17 @@ const uploadImage = async () => {
 }
 
 const submitOwnerMessage = async () => {
+  if (!canSubmitMessage.value) return
+  
   submittingMessage.value = true
   try {
-    // 1. 設定主人留言
     await axios.post(`/api/v2/story/projects/${projectId.value}/owner-message`, {
       message: ownerMessage.value
     })
 
-    // 2. 開始生成
     await axios.post(`/api/v2/story/projects/${projectId.value}/generate`)
     
-    currentStep.value = 5
+    currentStep.value = 6
     pollProgress()
   } catch (error) {
     alert('提交失敗：' + (error.response?.data?.error || error.message))
@@ -321,9 +440,8 @@ const pollProgress = async () => {
         clearInterval(interval)
         progress.value = 100
         result.value = response.data
-        result.value = response.data
         setTimeout(() => {
-          currentStep.value = 6
+          currentStep.value = 7
         }, 500)
       } else if (status === 'failed') {
         clearInterval(interval)
@@ -338,8 +456,10 @@ const pollProgress = async () => {
 
 const reset = () => {
   currentStep.value = 1
+  storyMode.value = ''
   dogName.value = ''
   dogBreed.value = ''
+  ownerRelationship.value = ''
   projectId.value = ''
   ownerMessage.value = ''
   videos.value = [null, null, null, null, null]
@@ -378,6 +498,44 @@ h1 {
   opacity: 0.9;
 }
 
+/* 步驟指示器 */
+.step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.step-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.step-dot.active {
+  background: white;
+}
+
+.step-dot.current {
+  transform: scale(1.2);
+  box-shadow: 0 0 15px rgba(255,255,255,0.5);
+}
+
+.step-num {
+  font-weight: 600;
+  color: #667eea;
+}
+
+.step-dot:not(.active) .step-num {
+  color: white;
+}
+
+/* 卡片 */
 .step-card {
   background: white;
   border-radius: 20px;
@@ -395,15 +553,68 @@ h2 {
   margin-bottom: 1.5rem;
 }
 
+/* 風格選擇 */
+.mode-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.mode-card {
+  border: 3px solid #e0e0e0;
+  border-radius: 15px;
+  padding: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.mode-card:hover {
+  border-color: #667eea;
+  transform: translateY(-5px);
+}
+
+.mode-card.selected {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+}
+
+.mode-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.mode-name {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.mode-desc {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+/* 表單 */
 .form-group {
   margin-bottom: 1.5rem;
 }
 
 .form-group label {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 0.5rem;
   font-weight: 600;
   color: #333;
+}
+
+.char-count {
+  font-weight: normal;
+  font-size: 0.85rem;
+  color: #999;
 }
 
 .form-group input {
@@ -420,21 +631,44 @@ h2 {
   border-color: #667eea;
 }
 
-.message-input {
-  width: 100%;
-  padding: 0.8rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 1rem;
-  resize: vertical;
-  font-family: inherit;
+.error-hint {
+  color: #f44336;
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
 }
 
+/* 關係選擇 */
+.relation-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.relation-chip {
+  padding: 0.6rem 1.2rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 25px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-weight: 500;
+}
+
+.relation-chip:hover {
+  border-color: #667eea;
+}
+
+.relation-chip.selected {
+  background: #667eea;
+  border-color: #667eea;
+  color: white;
+}
+
+/* 影片上傳 */
 .video-uploads {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
 .video-upload-box {
@@ -459,7 +693,7 @@ h2 {
 }
 
 .icon {
-  font-size: 3rem;
+  font-size: 2.5rem;
   margin-bottom: 0.5rem;
 }
 
@@ -467,22 +701,29 @@ h2 {
   font-weight: 600;
   color: #333;
   margin: 0.5rem 0;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   word-break: break-all;
 }
 
 .video-selected .size {
   color: #666;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .small {
   color: #999;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
+.upload-hint {
+  text-align: center;
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+/* 圖片上傳 */
 .image-upload {
-  max-width: 500px;
+  max-width: 400px;
   margin: 0 auto 2rem auto;
 }
 
@@ -492,10 +733,22 @@ h2 {
   margin-bottom: 1rem;
 }
 
+.message-input {
+  width: 100%;
+  padding: 0.8rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* 按鈕 */
 .actions {
   display: flex;
   gap: 1rem;
   justify-content: center;
+  margin-top: 1.5rem;
 }
 
 .btn-primary, .btn-secondary, .btn-remove {
@@ -505,6 +758,8 @@ h2 {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s;
+  text-decoration: none;
+  display: inline-block;
 }
 
 .btn-primary {
@@ -534,14 +789,16 @@ h2 {
 .btn-remove {
   background: #f44336;
   color: white;
-  font-size: 0.85rem;
-  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  margin-top: 0.5rem;
 }
 
 .btn-remove:hover {
   background: #da190b;
 }
 
+/* 處理中 */
 .processing {
   text-align: center;
   padding: 3rem;
@@ -577,6 +834,7 @@ h2 {
   transition: width 0.5s;
 }
 
+/* 完成頁 */
 .completed h2 {
   text-align: center;
   font-size: 2rem;
@@ -618,6 +876,7 @@ h2 {
   flex: 1;
   color: #333;
   line-height: 1.6;
+  margin: 0;
 }
 
 .final-message {
@@ -630,8 +889,9 @@ h2 {
 
 .final-message p {
   color: white;
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   font-weight: 600;
+  margin: 0;
 }
 
 .video-player {

@@ -45,6 +45,7 @@ type Project struct {
 	DogName           string      `json:"dog_name"`
 	DogBreed          string      `json:"dog_breed,omitempty"`
 	OwnerRelationship string      `json:"owner_relationship,omitempty"` // 主人與毛小孩的關係 (媽媽/爸爸/小主人等)
+	StoryMode         string      `json:"story_mode,omitempty"`         // 故事模式: warm(溫馨感人), cute(可愛活潑), funny(幽默風趣)
 	EndingImage       string      `json:"ending_image,omitempty"`       // 結尾圖片路徑
 	OwnerMessage      string      `json:"owner_message,omitempty"`      // 主人想對狗狗說的話
 	Status            string      `json:"status"`                       // pending, analyzing, generating_story, generating_video, completed, failed
@@ -279,6 +280,7 @@ func main() {
 			DogName           string `json:"dog_name" binding:"required"`
 			DogBreed          string `json:"dog_breed"`
 			OwnerRelationship string `json:"owner_relationship"` // 媽媽/爸爸/小主人等
+			StoryMode         string `json:"story_mode"`         // warm, cute, funny
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -291,6 +293,12 @@ func main() {
 			req.OwnerRelationship = "主人"
 		}
 
+		// 驗證並設定故事模式，預設為 warm
+		validModes := map[string]bool{"warm": true, "cute": true, "funny": true}
+		if req.StoryMode == "" || !validModes[req.StoryMode] {
+			req.StoryMode = "warm"
+		}
+
 		projectID := uuid.New().String()
 		project := &Project{
 			ID:                projectID,
@@ -298,6 +306,7 @@ func main() {
 			DogName:           req.DogName,
 			DogBreed:          req.DogBreed,
 			OwnerRelationship: req.OwnerRelationship,
+			StoryMode:         req.StoryMode,
 			Status:            "pending",
 			Videos:            []VideoInfo{},
 			CreatedAt:         time.Now(),
@@ -510,6 +519,7 @@ func main() {
 			"dog_name":           project.DogName,
 			"dog_breed":          project.DogBreed,
 			"owner_relationship": project.OwnerRelationship,
+			"story_mode":         project.StoryMode,
 			"ending_image":       project.EndingImage,
 			"status":             project.Status,
 			"videos":             project.Videos,
@@ -1172,7 +1182,7 @@ func analyzeVideo(project *Project, videoIndex int) error {
 
 // 有ＡＩ
 func generateStoryWithAI(project *Project) (*Story, error) {
-	log.Printf("Generating story for project %s with AI", project.ID)
+	log.Printf("Generating story for project %s with AI (mode: %s)", project.ID, project.StoryMode)
 
 	// 收集所有高光片段的描述
 	allHighlights := []string{}
@@ -1193,24 +1203,73 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		ownerTitle = "主人"
 	}
 
-	// 構建 prompt - 生成 5 段狗狗對白
-	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s。請想像你是一個 3 歲的小孩，用天真、單純、開心的語氣，看著這些影片對你的「%s」說話。
+	// 根據模式設定不同的提示詞風格
+	var modeStyle, modeExamples, modeEmotion string
+	switch project.StoryMode {
+	case "cute": // 可愛活潑（但不要太做作）
+		modeStyle = "活潑、親人、喜歡撒嬌的小狗"
+		modeEmotion = "開心、興奮、會撒嬌，但不會每一句都刻意裝可愛。偶爾用疊字或語氣詞（嘿嘿、好啦）就好。"
+		modeExamples = fmt.Sprintf(`「%s，你回來了！我有很乖地在門口等你喔。」
+「跟你一起玩的時候，我的尾巴都自己一直搖，停不下來。」
+「%s，可以再抱我一下嗎？被你抱著的時候，我覺得自己好安心。」`,
+			ownerTitle, ownerTitle)
 
-影片片段：
+	case "funny": // 幽默風趣
+		modeStyle = "有點小聰明、會吐槽、但心裡很黏人的諧星狗狗"
+		modeEmotion = "幽默、自嘲、搞笑，會開玩笑吐槽%s，但不是真的在抱怨，語氣要帶著喜歡和依賴。"
+		modeEmotion = fmt.Sprintf(modeEmotion, ownerTitle)
+		modeExamples = fmt.Sprintf(`「%s，你知道嗎？我覺得沙發那一邊比較軟，所以我先幫你躺好試試看。」
+「欸～那個零食櫃我都有幫你看好喔，只是剛好順便幫自己看一下而已啦。」
+「好啦，我每天都在碎念你，可是你不在家的時候，我其實超想你的。」`,
+			ownerTitle)
+
+	default: // warm - 溫馨感人
+		modeStyle = "溫柔、感性、很在意細節的小天使狗狗"
+		modeEmotion = "溫馨、感動、深情，用具體回憶來表達對主人的依戀與感謝，而不是一直重複同一句話。"
+		modeExamples = fmt.Sprintf(`「%s你看，我跑得有點慢了，可是我還是想要走到門口等你。」
+「只要你在，我就覺得家裡好安靜、好安全，我可以放心地睡在你腳邊。」
+「謝謝你一直陪著我，累的時候還是會摸摸我、叫我的名字，我真的好喜歡那個聲音。」`,
+			ownerTitle)
+	}
+
+	// 構建 prompt - 生成 5 段狗狗對白（加長、加細節）
+	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s，是一個有靈魂的小毛孩。  
+請用「第一人稱」的口吻，像一個 3～5 歲的小朋友，在看著這些回憶影片時，  
+對你的「%s」說悄悄話。
+
+🎭 本次風格設定：
+- 角色性格：%s
+- 情感基調：%s
+- 你非常愛你的%s，也非常依賴他/她。
+
+下面是剪輯出來的影片片段描述（每一行是一個高光片段）：
 %s
 
-請創作 5 段對白，每段約 20-30 字：
-- **角色設定**：你是 3 歲的小朋友，說話不用太複雜，要可愛、直接。
-- **情感基調**：充滿愛、開心、感謝。覺得%s是世界上最棒的人。
-- **稱呼**：請在對白中適當使用「%s」這個稱呼。
-- **必須創作正好 5 段對白**，對應 5 個影片。
-- 第 5 段要特別感人，表達會永遠愛%s。
+請根據這些片段，替「狗狗本人」寫出 5 段對白，每段是狗狗在看著對應影片時心裡說的話。
 
-範例風格：
-「%s你看！我跑得好快喔！因為我想快點撲到你懷裡～」
-「最喜歡跟%s在一起了，只要有你在，我就好安心好開心！」
+創作要求：
+1. 語氣設定：
+   - 用「我」來稱呼自己，用「%s」來稱呼對方。
+   - 口吻單純、直接，有點像小孩講話，但可以有情緒層次。
+2. 內容重點：
+   - 每一段要盡量呼應該段影片的畫面與情境（跑、撲、一起睡覺、散步…）。
+   - 可以具體描述畫面，例如「我衝過去撲在你身上」、「我趴在門口等你」。
+3. 長度與結構：
+   - 每段對白請寫成「2～3 句短句」。
+   - 整段總長度約 40～70 個中文字，不要太短。
+4. 情緒控制：
+   - 前 1～4 段可以偏日常、溫暖、搞笑或可愛（依照風格）。
+   - 第 5 段要特別有感情，帶一點不捨與感謝，可以提到「就算看不到我，我還是在你身邊」這類句子。
+   - 不要過度灑狗血，不要連發很多「謝謝你」而沒有具體畫面。
+5. 文字風格：
+   - 避免太制式的句子（例如「你是我最好的朋友」、「謝謝你的陪伴」可以出現，但不要一整段都在講這種話）。
+   - 盡量多一點畫面感與細節，少一點空泛形容詞。
 
-以 JSON 格式回應（必須是正好 5 個 chapters）：
+你可以參考以下風格示意（只參考語氣與情緒，不要直接抄）：
+%s
+
+請用 **嚴格 JSON 格式** 回應，內容必須是正好 5 個 chapters，例如：
+
 {
   "title": "給%s的悄悄話",
   "chapters": [
@@ -1222,16 +1281,18 @@ func generateStoryWithAI(project *Project) (*Story, error) {
   ]
 }
 
-只回傳 JSON，不要其他文字。`,
+注意：
+- 只回傳 JSON，不要任何註解、解說、markdown 或額外符號。
+- narration 必須是完整中文句子，符合上述長度與情感要求。`,
 		project.DogName,
 		project.DogBreed,
 		ownerTitle,
+		modeStyle,
+		modeEmotion,
+		ownerTitle,
 		strings.Join(allHighlights, "\n"),
 		ownerTitle,
-		ownerTitle,
-		ownerTitle,
-		ownerTitle,
-		ownerTitle,
+		modeExamples,
 		ownerTitle)
 
 	// 調用 Gemini AI
@@ -1373,7 +1434,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 func generateDogResponse(project *Project, story *Story) (string, error) {
 	log.Printf("Generating dog response for project %s", project.ID)
 
-	// 收集影片描述
+	// 收集影片描述（給模型一點上下文，不用太長）
 	videoDescriptions := []string{}
 	for i, chapter := range story.Chapters {
 		videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d: %s", i+1, chapter.Narration))
@@ -1385,38 +1446,104 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		ownerTitle = "主人"
 	}
 
-	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s。你的「%s」剛剛對你說了一段很感人的話。
-請你用 **3 歲小孩** 的語氣和心智，回應你的%s。
+	// 根據模式設定不同的回應風格
+	var modeStyle, modeEmotion, modeExamples, modeNote string
+	switch project.StoryMode {
+	case "cute": // 可愛活潑
+		modeStyle = "活潑、親人、喜歡撒嬌的小狗"
+		modeEmotion = "開心、興奮、黏人，講話會不自覺帶點小撒嬌，但不會每一句都裝可愛。"
+		modeExamples = fmt.Sprintf(`「%s你說那麼多話，我都有聽到喔，我好喜歡你叫我名字的聲音。」
+「%s，我真的好喜歡黏在你身邊睡覺，你走開的時候，我都會偷偷起來找你。」`,
+			ownerTitle, ownerTitle)
+		modeNote = "可以偶爾用一點輕鬆的語氣詞（像是：嘿嘿、好啦），但不要整段都是疊字或太做作。"
 
-%s對你說：
-「%s」
+	case "funny": // 幽默風趣
+		modeStyle = "有點小聰明、會吐槽、但超級愛主人的諧星狗狗"
+		modeEmotion = "幽默、自嘲、會小小吐槽一下%s，但整體是溫暖、依賴的感覺。"
+		modeEmotion = fmt.Sprintf(modeEmotion, ownerTitle)
+		modeExamples = fmt.Sprintf(`「%s，你講那麼感人，我耳朵都要熱起來了啦，不過我真的超想你的。」
+「欸～%s，你哭的時候鼻子皺皺的，其實有點好笑…但我最喜歡你笑給我看的樣子。」`,
+			ownerTitle, ownerTitle)
+		modeNote = "可以有一點點玩笑和吐槽，但結尾要真心，讓人感覺到是溫柔的狗狗。"
 
-你們的回憶：
-%s
+	default: // warm - 溫馨感人
+		// 感人模式：像小孩很認真在安慰最重要的大人
+		modeStyle = "溫柔、感性、特別在意%s心情、很怕你難過的小天使狗狗"
+		modeStyle = fmt.Sprintf(modeStyle, ownerTitle)
+		modeEmotion = "溫馨、感動、帶著深深的思念，像小朋友抱著大人的手，一邊說話一邊偷偷安慰對方。"
+		modeExamples = fmt.Sprintf(`「%s，我真的有一個一個記住你說的每一句話，你難過的時候，我也好想抱抱你。」
+「%s，你不要一直覺得自己一個人走，我會像以前一樣，在你看不到的地方跟著你走路、陪你回家、在門口等你。」`,
+			ownerTitle, ownerTitle)
+		modeNote = "請用具體畫面（等你回家、一起睡覺、聽你說話、跟著你走路…）來表達思念和感謝，而不是只重複『謝謝你』『我愛你』這些字。整體情緒要溫暖、讓人有被好好抱住的感覺。"
+	}
 
-請以狗狗的第一人稱（我）回應，要求：
-1. **語氣像 3 歲小孩**：天真、單純、直接、可愛。不要用太成熟或文謅謅的詞。
-2. **字數**：30-50 字左右，不要太長。
-3. **內容**：表達感謝和開心，告訴%s你也很愛他/她，會永遠陪著他/她。
-4. **稱呼**：回應中要叫「%s」。
-5. **不要**用「汪汪」或「嗚嗚」等擬聲詞，用人類的語言（小朋友的口吻）表達。
+	// 建立 prompt：讓狗狗在結尾說一段「成熟、真心安慰媽媽」的告白
+	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s。你的「%s」剛剛對你說了一段很重要的話，裡面充滿了想念和感謝。
+	請你以一隻懂事、成熟、會心疼%s的狗狗身份，對 %s 說一段真心的結尾告白。這段話會出現在故事的最後，但內容本身不要提到「影片」「畫面」這些字，就當作你真的站在她面前，安安靜靜地把心裡話說完。
 
-範例風格：
-「%s，我聽到了！我也最愛你了！雖然我只會跑跑跳跳，但我會一直黏著你，做你最乖的寶貝！」
-「%s不要哭，我會永遠保護你的！我們打勾勾，要一直在一起喔！」
+	【你的角色設定】
+	- 你是：%s
+	- 語氣特徵：%s
+	- 特別注意：%s
 
-請根據%s的話，創作一段溫暖、可愛、像小朋友一樣的回應。只回傳回應文字，不要其他內容。`,
+	【%s 對你說的話】（請真正參考裡面的情緒與重點）：
+	「%s」
+
+	【你們一起經歷過的一些回憶畫面】（只作為靈感參考，不用逐條回應）：
+	%s
+
+	請以「狗狗自己的第一人稱（我）」回應，創作一段給 %s 的結尾告白，遵守以下要求：
+
+	1. 語氣：
+	   - 用成熟、溫柔的大人語氣說話，好像一個長大後的孩子在安慰自己最重要的家人。
+	   - 可以帶一點撒嬌或俏皮，但整體要穩定、真誠、讓人覺得被好好抱住。
+	   - 根據當前模式維持風格：%s。
+
+	2. 內容：
+	   - 不要解釋或重複「你剛剛說了什麼」「我有聽到你說的話」這類句子，也不要總結對方講的內容。
+	   - 請直接表達「你」對她的愛、感謝和心疼，主動安慰她、照顧她的情緒。
+	   - 至少提到 2 個具體回憶畫面（例如：等你回家、一起睡覺、趴在門口等你、一起坐車、你哭的時候我在旁邊陪你、你抱著我睡覺…）。
+	   - 要清楚表達三件事：
+	     (1) 你有多珍惜和她一起生活的那些日子
+	     (2) 就算現在看不到你，你還是會一直守在她身邊、保護她
+	     (3) 你希望她好好過生活，不要一直覺得自己是孤單一個人
+
+	3. 字數與句子：
+	   - 請寫成至少 4 句以上的完整段落。
+	   - 總長度大約 120～200 個中文字，一定要有「好好把話說完」的感覺，不可以只寫一兩句就結束。
+	   - 句子可以用「，」「…」等停頓來表達情緒，但不要整段都在重複同一句話。
+
+	4. 稱呼與限制：
+	   - 回應中要直接叫「%s」至少一次。
+	   - 不要使用「汪汪」「嗚嗚」這類擬聲詞，也不要假裝自己在寫腳本或分析。
+	   - 不要提到「這段話是影片的結尾」之類的 meta 描述，只要把你想對她說的話講清楚就好。
+	   - 不要加入任何系統說明、分析文字或 JSON，只要給我最後那段狗狗說的話。
+
+	【風格示意（只參考語氣，不要照抄）】：
+	%s
+
+	請根據以上資訊，寫出一段溫暖、真誠、像一位長大後的孩子對 %s 說的結尾告白。只回傳那一段對白文字，不要其他內容。`,
 		project.DogName,
 		project.DogBreed,
 		ownerTitle,
 		ownerTitle,
 		ownerTitle,
+		modeStyle,
+		modeEmotion,
+		modeNote,
+		ownerTitle,
 		project.OwnerMessage,
 		strings.Join(videoDescriptions, "\n"),
 		ownerTitle,
+		modeEmotion,
 		ownerTitle,
 		ownerTitle,
+		ownerTitle,
+		modeExamples,
 		ownerTitle)
+
+	log.Printf("Dog response prompt (mode=%s): %s", project.StoryMode, prompt)
+	log.Printf("ＡＬＬ prompt：", prompt)
 
 	requestBody := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -1427,8 +1554,15 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 			},
 		},
 		"generationConfig": map[string]interface{}{
-			"temperature":     0.8, // 提高溫度，增加情感豐富度
-			"maxOutputTokens": 500,
+			"temperature":     0.9,
+			"maxOutputTokens": 2000,
+		},
+		// 放寬安全過濾，避免寵物紀念內容被誤判為敏感內容
+		"safetySettings": []map[string]interface{}{
+			{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+			{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
 		},
 	}
 
@@ -1446,6 +1580,9 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
+	// 印出完整 raw response 方便 debug 截斷問題
+	log.Printf("[DEBUG] Gemini raw response for dog_response (len=%d): %s", len(bodyBytes), string(bodyBytes))
+
 	var apiResponse struct {
 		Candidates []struct {
 			Content struct {
@@ -1453,10 +1590,12 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 					Text string `json:"text"`
 				} `json:"parts"`
 			} `json:"content"`
+			FinishReason string `json:"finishReason"`
 		} `json:"candidates"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
+		log.Printf("[ERROR] Failed to unmarshal Gemini response: %v", err)
 		return "", err
 	}
 
@@ -1464,11 +1603,41 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		return "", fmt.Errorf("no response from AI")
 	}
 
-	response := apiResponse.Candidates[0].Content.Parts[0].Text
+	// 將所有 parts 的文字串接起來，避免只取第一個 part 導致內容被截斷
+	var sb strings.Builder
+	for _, part := range apiResponse.Candidates[0].Content.Parts {
+		sb.WriteString(part.Text)
+	}
+	response := sb.String()
+
+	finishReason := apiResponse.Candidates[0].FinishReason
+	log.Printf("Raw dog response text (finishReason=%s, len=%d): %q", finishReason, len(response), response)
+
+	// 如果被截斷（MAX_TOKENS）或字數太少，給一個警告
+	if finishReason == "MAX_TOKENS" {
+		log.Printf("⚠️ WARNING: dog response was truncated by MAX_TOKENS!")
+	}
+
 	response = strings.TrimSpace(response)
+	// 去掉可能包起來的引號或書名號
 	response = strings.Trim(response, "「」\"")
 
-	log.Printf("Generated dog response: %s", response)
+	// 檢查長度與結尾，避免看起來像「講到一半就被切斷」
+	runeCount := len([]rune(response))
+	log.Printf("Generated dog response (cleaned, runes=%d): %s", runeCount, response)
+
+	// 1) 如果回應太短（少於 120 個中文字），直接使用預設的感人結尾
+	// if runeCount < 120 {
+	// 	log.Printf("⚠️ Dog response too short (%d runes), using fallback", runeCount)
+	// 	response = fmt.Sprintf("%s，謝謝你給我這麼多的愛，每一個和你在一起的日子，都是我最珍貴的回憶。你抱著我的時候，我覺得全世界都是溫暖的。就算現在你看不到我，我也會一直守在你身邊，陪你走過每一個早晨和夜晚。不要難過，因為我從來沒有離開過你。%s，我永遠愛你。", ownerTitle, ownerTitle)
+	// 	return response, nil
+	// }
+
+	// 2) 長度夠，但如果最後沒有用句號收尾，看起來像沒講完，就幫他補上一句清楚的結尾
+	if !strings.HasSuffix(response, "。") && !strings.HasSuffix(response, "！") && !strings.HasSuffix(response, "？") {
+		response = response + fmt.Sprintf("，所以你要好好過生活，因為我會一直在你心裡，默默抱著你、陪著你走下去。%s，我永遠愛你。", ownerTitle)
+	}
+
 	return response, nil
 }
 
@@ -1682,7 +1851,12 @@ func compositeVideo(project *Project) error {
 func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error {
 	outputDir := filepath.Dir(outputPath)
 
-	log.Printf("Creating video segments with fade transitions and TTS audio")
+	log.Printf("🎬 Creating video segments with fade transitions and TTS audio")
+
+	// 統一目標尺寸為 16:9 (1920x1080)
+	targetWidth := 1920
+	targetHeight := 1080
+	log.Printf("📐 Target resolution: %dx%d (16:9)", targetWidth, targetHeight)
 
 	// 處理每個章節
 	processedSegments := []string{}
@@ -1700,9 +1874,14 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 		}
 
 		if videoPath == "" {
-			log.Printf("Warning: video not found for chapter %d", i+1)
+			log.Printf("⚠️ Warning: video not found for chapter %d", i+1)
 			continue
 		}
+
+		// 獲取原始影片尺寸
+		origWidth, origHeight := getVideoResolution(videoPath)
+		log.Printf("📹 Chapter %d: original size=%dx%d, duration=%.2f-%.2f",
+			chapter.Index, origWidth, origHeight, chapter.StartTime, chapter.EndTime)
 
 		// 剪切影片片段（移除音訊）
 		segmentPath := filepath.Join(outputDir, fmt.Sprintf("segment_%d.mp4", chapter.Index))
@@ -1711,26 +1890,37 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 		fadeDuration := 0.5
 		videoDuration := chapter.EndTime - chapter.StartTime
 
-		// 使用 ffmpeg 剪切並添加淡入淡出效果（移除音訊）
-		fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
+		// 組合濾鏡：縮放到 16:9 + 淡入淡出
+		// scale 保持寬高比，pad 填充黑邊到目標尺寸
+		videoFilter := fmt.Sprintf(
+			"scale=%d:%d:force_original_aspect_ratio=decrease,"+
+				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
+				"fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
+			targetWidth, targetHeight,
+			targetWidth, targetHeight,
 			fadeDuration, videoDuration-fadeDuration, fadeDuration)
+
+		log.Printf("🎨 Chapter %d filter: %s", chapter.Index, videoFilter)
 
 		cmd := exec.Command("ffmpeg",
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 			"-to", fmt.Sprintf("%.2f", chapter.EndTime),
-			"-vf", fadeFilter,
+			"-vf", videoFilter,
 			"-an", // 移除音訊
 			"-c:v", "libx264",
+			"-preset", "fast",
+			"-pix_fmt", "yuv420p",
 			"-y",
 			segmentPath,
 		)
 
 		if output, err := cmd.CombinedOutput(); err != nil {
-			log.Printf("Failed to create segment %d: %v, output: %s", chapter.Index, err, string(output))
+			log.Printf("❌ Failed to create segment %d: %v, output: %s", chapter.Index, err, string(output))
 			continue
 		}
 
+		log.Printf("✅ Chapter %d segment created: %s", chapter.Index, segmentPath)
 		processedSegments = append(processedSegments, segmentPath)
 
 		// 如果有 TTS 音訊，記錄下來
@@ -1740,8 +1930,10 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 	}
 
 	if len(processedSegments) == 0 {
-		return fmt.Errorf("no segments created")
+		return fmt.Errorf("❌ no segments created")
 	}
+
+	log.Printf("📦 Total %d segments created, preparing to concatenate", len(processedSegments))
 
 	// 合併所有影片片段
 	concatListPath := filepath.Join(outputDir, "concat_segments.txt")
@@ -1751,10 +1943,13 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 	}
 	defer f.Close()
 
-	for _, seg := range processedSegments {
+	for i, seg := range processedSegments {
 		fmt.Fprintf(f, "file '%s'\n", filepath.Base(seg))
+		log.Printf("  %d. %s", i+1, filepath.Base(seg))
 	}
 	f.Close()
+
+	log.Printf("🔗 Concatenating %d video segments...", len(processedSegments))
 
 	// 拼接影片
 	videoOnlyPath := filepath.Join(outputDir, "video_only.mp4")
@@ -1768,12 +1963,14 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 	)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("ffmpeg concat error: %v, output: %s", err, string(output))
+		return fmt.Errorf("❌ ffmpeg concat error: %v, output: %s", err, string(output))
 	}
+
+	log.Printf("✅ Video segments concatenated: %s", videoOnlyPath)
 
 	// 合併所有 TTS 音訊
 	if len(audioInputs) > 0 {
-		log.Printf("Merging %d TTS audio files", len(audioInputs))
+		log.Printf("🎤 Merging %d TTS audio files", len(audioInputs))
 
 		audioListPath := filepath.Join(outputDir, "concat_audio.txt")
 		af, err := os.Create(audioListPath)
@@ -1843,17 +2040,24 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	outputDir := filepath.Dir(inputVideo)
 	endingDuration := 10.0 // 結尾 10 秒
 
-	// 準備狗狗回應文字
-	dogText := fmt.Sprintf("🐾 %s：%s", project.DogName, project.Story.DogResponse)
+	// 準備狗狗回應文字（直接是狗狗視角的話，不加名字前綴）
+	dogText := project.Story.DogResponse
+	// 為了避免文字太長被左右切掉，先做簡單斷行（大約每行 22 個字）
+	dogText = wrapTextForFFmpeg(dogText, 22)
 
-	// 獲取輸入影片時長和解析度
+	// 獲取輸入影片時長和原始解析度
 	inputDuration := getVideoDuration(inputVideo)
-	width, height := getVideoResolution(inputVideo)
-	if inputDuration == 0 || width == 0 || height == 0 {
-		log.Printf("Warning: Could not get input video info (duration: %.2f, size: %dx%d), copying input as-is", inputDuration, width, height)
+	originalWidth, originalHeight := getVideoResolution(inputVideo)
+	if inputDuration == 0 || originalWidth == 0 || originalHeight == 0 {
+		log.Printf("⚠️ Warning: Could not get input video info (duration: %.2f, size: %dx%d), copying input as-is", inputDuration, originalWidth, originalHeight)
 		return exec.Command("cp", inputVideo, outputVideo).Run()
 	}
-	log.Printf("Input video info: duration=%.2fs, size=%dx%d", inputDuration, width, height)
+	log.Printf("📹 Input video info: duration=%.2fs, original size=%dx%d", inputDuration, originalWidth, originalHeight)
+
+	// 統一使用 16:9 比例 (1920x1080)
+	width := 1920
+	height := 1080
+	log.Printf("🎬 Target video size: %dx%d (16:9)", width, height)
 
 	// 創建結尾圖片影片（10秒）
 	endingVideoPath := filepath.Join(outputDir, "ending_segment.mp4")
@@ -1867,13 +2071,11 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 			fontFile = "Arial" // Fallback
 		}
 	}
-	log.Printf("Using font: %s", fontFile)
+	log.Printf("🔤 Using font: %s", fontFile)
 
-	// 計算字體大小 (根據高度調整)
-	fontSize := height / 25
-	if fontSize < 24 {
-		fontSize = 24
-	}
+	// 字體大小改為 24，適中顯示
+	fontSize := 40
+	log.Printf("📏 Font size: %d", fontSize)
 
 	// 使用 FFmpeg 創建結尾圖片影片
 	// 1. 循環圖片 10 秒
@@ -2298,6 +2500,40 @@ func escapeFFmpegText(text string) string {
 	return text
 }
 
+// wrapTextForFFmpeg 將長文字按最大字數換行，避免在 drawtext 中被左右切掉
+// maxChars 是「每行最多的字數」（以 rune 計算，適合中英文摻雜的情況）
+func wrapTextForFFmpeg(text string, maxChars int) string {
+	if maxChars <= 0 {
+		return text
+	}
+
+	// 先以原本的換行切開，每一段再做一次包裝
+	parts := strings.Split(text, "\n")
+	wrappedParts := make([]string, 0, len(parts))
+
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			wrappedParts = append(wrappedParts, "")
+			continue
+		}
+
+		runes := []rune(p)
+		lineStart := 0
+		for lineStart < len(runes) {
+			end := lineStart + maxChars
+			if end > len(runes) {
+				end = len(runes)
+			}
+			wrappedParts = append(wrappedParts, string(runes[lineStart:end]))
+			lineStart = end
+		}
+	}
+
+	// 使用真正的換行字元，讓 FFmpeg drawtext 正確換行
+	return strings.Join(wrappedParts, "\n")
+}
+
 func generateOwnerMessageTTS(message, outputPath string) error {
 	log.Printf("Generating TTS for owner message: %s", message)
 
@@ -2453,11 +2689,28 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 
 	// 使用 FFmpeg 將字幕燒錄到影片中
 	// 字幕樣式：白色文字、黑色邊框、底部居中
-	subtitleStyle := "FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=30"
+	// 字體大小改為 16，適中顯示
+	subtitleStyle := "FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=30"
+
+	log.Printf("📝 Adding subtitles with style: %s", subtitleStyle)
+	log.Printf("📄 Subtitle file: %s", srtPath)
+
+	// 複製字幕檔案到沒有空格的臨時路徑（避免 FFmpeg filter 路徑解析問題）
+	tempSrtPath := filepath.Join(os.TempDir(), "subtitles_temp.srt")
+	srtContent, err := os.ReadFile(srtPath)
+	if err != nil {
+		return fmt.Errorf("failed to read srt file: %v", err)
+	}
+	if err := os.WriteFile(tempSrtPath, srtContent, 0644); err != nil {
+		return fmt.Errorf("failed to write temp srt file: %v", err)
+	}
+	defer os.Remove(tempSrtPath)
+
+	log.Printf("📄 Using temp subtitle file: %s", tempSrtPath)
 
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
-		"-vf", fmt.Sprintf("subtitles=%s:force_style='%s'", srtPath, subtitleStyle),
+		"-vf", fmt.Sprintf("subtitles=%s:force_style='%s'", tempSrtPath, subtitleStyle),
 		"-c:a", "copy",
 		"-y",
 		outputVideo,
