@@ -41,6 +41,3 @@ frontend/yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
-
-# Test files
-test_*.go
