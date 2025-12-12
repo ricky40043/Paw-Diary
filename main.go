@@ -1500,24 +1500,23 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	   - 根據當前模式維持風格：%s。
 
 	2. 內容：
-	   - 不要解釋或重複「你剛剛說了什麼」「我有聽到你說的話」這類句子，也不要總結對方講的內容。
-	   - 請直接表達「你」對她的愛、感謝和心疼，主動安慰她、照顧她的情緒。
-	   - 至少提到 2 個具體回憶畫面（例如：等你回家、一起睡覺、趴在門口等你、一起坐車、你哭的時候我在旁邊陪你、你抱著我睡覺…）。
-	   - 要清楚表達三件事：
-	     (1) 你有多珍惜和她一起生活的那些日子
-	     (2) 就算現在看不到你，你還是會一直守在她身邊、保護她
-	     (3) 你希望她好好過生活，不要一直覺得自己是孤單一個人
+	   - 不要解釋或重複「你剛剛說了什麼」，直接表達對她的愛和感謝
+	   - 可以簡單提到 1 個具體回憶或感受
+	   - 表達你對她的愛、感激和陪伴
 
 	3. 字數與句子：
-	   - 請寫成至少 4 句以上的完整段落。
-	   - 總長度大約 120～200 個中文字，一定要有「好好把話說完」的感覺，不可以只寫一兩句就結束。
-	   - 句子可以用「，」「…」等停頓來表達情緒，但不要整段都在重複同一句話。
+	   - **重要！！！嚴格控制在 40-60 個中文字之間**
+	   - **絕對不能超過 60 字，也不能少於 40 字**
+	   - 只寫 2-3 句短句，不要寫長段落
+	   - 簡潔有力，每個字都要有意義
+	   - 如果超過 60 字，請刪減內容直到符合字數
 
 	4. 稱呼與限制：
-	   - 回應中要直接叫「%s」至少一次。
-	   - 不要使用「汪汪」「嗚嗚」這類擬聲詞，也不要假裝自己在寫腳本或分析。
-	   - 不要提到「這段話是影片的結尾」之類的 meta 描述，只要把你想對她說的話講清楚就好。
-	   - 不要加入任何系統說明、分析文字或 JSON，只要給我最後那段狗狗說的話。
+	   - 回應中要直接叫「%s」至少一次
+	   - 不要使用「汪汪」「嗚嗚」這類擬聲詞
+	   - 不要提到「影片」「畫面」等詞
+	   - **再次強調：總字數必須在 40-60 字之間，請務必計算字數**
+	   - 只回傳狗狗說的話，不要任何其他內容
 
 	【風格示意（只參考語氣，不要照抄）】：
 	%s
@@ -1625,6 +1624,32 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	// 檢查長度與結尾，避免看起來像「講到一半就被切斷」
 	runeCount := len([]rune(response))
 	log.Printf("Generated dog response (cleaned, runes=%d): %s", runeCount, response)
+	
+	// 強制限制字數在 40-60 字之間
+	if runeCount > 60 {
+		log.Printf("⚠️ Dog response too long (%d chars), truncating to 60 chars", runeCount)
+		runes := []rune(response)
+		// 截取前 60 字
+		response = string(runes[:60])
+		// 找最後一個句號、逗號或感嘆號的位置，在那裡截斷比較自然
+		lastPunc := -1
+		responseRunes := []rune(response)
+		for i := len(responseRunes) - 1; i >= 40; i-- {
+			if responseRunes[i] == '。' || responseRunes[i] == '，' || responseRunes[i] == '！' {
+				lastPunc = i + 1
+				break
+			}
+		}
+		if lastPunc > 40 {
+			response = string(responseRunes[:lastPunc])
+		}
+		runeCount = len([]rune(response))
+		log.Printf("✂️ Truncated to %d chars: %s", runeCount, response)
+	} else if runeCount < 40 {
+		log.Printf("⚠️ Dog response too short (%d chars), using fallback", runeCount)
+		response = fmt.Sprintf("%s，我也最愛最愛你了！每天和你在一起的時光，都是我最幸福的回憶。", ownerTitle)
+		runeCount = len([]rune(response))
+	}
 
 	// 1) 如果回應太短（少於 120 個中文字），直接使用預設的感人結尾
 	// if runeCount < 120 {
@@ -1633,10 +1658,14 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	// 	return response, nil
 	// }
 
-	// 2) 長度夠，但如果最後沒有用句號收尾，看起來像沒講完，就幫他補上一句清楚的結尾
+	// 2) 確保結尾有標點符號（但不要再加長文字，避免超過字數限制）
 	if !strings.HasSuffix(response, "。") && !strings.HasSuffix(response, "！") && !strings.HasSuffix(response, "？") {
-		response = response + fmt.Sprintf("，所以你要好好過生活，因為我會一直在你心裡，默默抱著你、陪著你走下去。%s，我永遠愛你。", ownerTitle)
+		response = response + "。"
 	}
+
+	// 最終檢查字數
+	finalRuneCount := len([]rune(response))
+	log.Printf("Final dog response (runes=%d): %s", finalRuneCount, response)
 
 	return response, nil
 }

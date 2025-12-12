@@ -1,40 +1,39 @@
 <template>
   <div class="home">
     <div class="hero">
-      <h1>🐕 狗狗回憶影片自動剪輯</h1>
-      <p class="subtitle">上傳影片，AI 自動找出你與狗狗的互動精彩時刻</p>
+      <h1>🐾 狗狗愛的回憶</h1>
+      <p class="subtitle">珍藏與毛孩相處的每一個溫馨時刻</p>
       
       <div class="features">
         <div class="feature-card">
           <div class="icon">📹</div>
-          <h3>自動分析</h3>
-          <p>AI 自動分析影片中的互動片段</p>
-        </div>
-        <div class="feature-card">
-          <div class="icon">✨</div>
           <h3>智能剪輯</h3>
-          <p>找出最精彩的高光時刻</p>
+          <p>自動整理影片中的精彩片段</p>
         </div>
         <div class="feature-card">
           <div class="icon">💝</div>
+          <h3>溫馨故事</h3>
+          <p>為你和毛孩創作專屬回憶故事</p>
+        </div>
+        <div class="feature-card">
+          <div class="icon">🎵</div>
           <h3>永久珍藏</h3>
-          <p>保存與狗狗的珍貴回憶</p>
+          <p>配上音樂和旁白，保存珍貴回憶</p>
         </div>
       </div>
 
       <div class="cta">
-        <router-link to="/poc/jobs" class="btn-primary">開始使用</router-link>
+        <router-link to="/love-story" class="btn-primary">開始製作</router-link>
       </div>
     </div>
 
     <div class="info-section">
-      <h2>Phase 1 - 概念驗證</h2>
-      <p>目前支援：</p>
+      <h2>如何使用</h2>
       <ul>
-        <li>✅ 上傳單一影片（MP4/MOV/AVI）</li>
-        <li>✅ 自動抽取畫面幀</li>
-        <li>✅ AI 分析互動片段</li>
-        <li>✅ 生成高光精華影片</li>
+        <li>📱 上傳 5 個與狗狗的日常影片</li>
+        <li>📝 填寫狗狗的基本資料</li>
+        <li>💌 寫下想對狗狗說的話</li>
+        <li>🎬 系統自動生成溫馨回憶影片</li>
       </ul>
     </div>
   </div>

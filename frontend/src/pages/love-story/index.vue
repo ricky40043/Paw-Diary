@@ -2,7 +2,7 @@
   <div class="love-story">
     <div class="container">
       <h1>💝 給主人的告白</h1>
-      <p class="subtitle">上傳 5 個狗狗影片，讓 AI 創作感人的愛的告白</p>
+      <p class="subtitle">上傳 5 個狗狗影片，創作專屬於你們的溫馨回憶</p>
 
       <!-- 步驟指示器 -->
       <div class="step-indicator">
@@ -14,7 +14,7 @@
       <!-- Step 1: 選擇風格模式 -->
       <div v-if="currentStep === 1" class="step-card">
         <h2>步驟 1：選擇影片風格</h2>
-        <p class="hint">選擇一個風格，AI 會根據風格創作不同的狗狗對白</p>
+        <p class="hint">選擇一個風格，系統會為你創作不同風格的狗狗對白</p>
         
         <div class="mode-selector">
           <div 
@@ -202,7 +202,7 @@
       <!-- Step 6: 處理中 -->
       <div v-if="currentStep === 6" class="step-card processing">
         <div class="spinner"></div>
-        <h2>✨ AI 正在創作中...</h2>
+        <h2>✨ 正在製作影片...</h2>
         <p>{{ statusMessage }}</p>
         <div class="progress">
           <div class="progress-bar" :style="{width: progress + '%'}"></div>
