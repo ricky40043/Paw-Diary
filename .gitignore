@@ -31,3 +31,16 @@ frontend/.env.*.local
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
+
+# Test videos
+狗狗影片/
+*.mp4
+*.mov
+*.avi
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.go

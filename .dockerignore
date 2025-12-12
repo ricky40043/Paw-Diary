@@ -1,0 +1,52 @@
+# =============================================================================
+# Docker ignore file - exclude unnecessary files from build context
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (will be installed fresh in container)
+frontend/node_modules
+
+# Local storage (don't include user data)
+storage/
+
+# Test files
+*_test.go
+test_*.go
+*.test
+
+# Local env files (secrets)
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Build artifacts that will be regenerated
+frontend/dist
+
+# Videos for testing
+狗狗影片/
+*.mp4
+*.mov
+*.avi
