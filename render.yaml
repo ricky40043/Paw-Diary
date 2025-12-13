@@ -14,19 +14,22 @@ services:
 
     buildCommand: |
       set -e
+      BIN_DIR="$PWD/bin"
+      mkdir -p "$BIN_DIR"
+
       # Install ffmpeg (static build, avoid apt on read-only FS)
       curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz
       tar -xJf /tmp/ffmpeg.tar.xz -C /tmp
       FFDIR=$(tar -tf /tmp/ffmpeg.tar.xz | head -1 | cut -d/ -f1)
-      mkdir -p /app/bin
-      cp /tmp/$FFDIR/ffmpeg /tmp/$FFDIR/ffprobe /app/bin/
-      chmod +x /app/bin/ffmpeg /app/bin/ffprobe
+      cp /tmp/$FFDIR/ffmpeg /tmp/$FFDIR/ffprobe "$BIN_DIR"/
+      chmod +x "$BIN_DIR/ffmpeg" "$BIN_DIR/ffprobe"
 
+      export PATH="$BIN_DIR:$PATH"
       npm install --prefix frontend
       npm run build --prefix frontend
       go build -o main .
 
-    startCommand: PATH="/app/bin:$PATH" ./main
+    startCommand: PATH="$PWD/bin:$PATH" ./main
 
     envVars:
       - key: PORT
