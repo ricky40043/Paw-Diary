@@ -18,14 +18,15 @@ services:
       curl -L https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz
       tar -xJf /tmp/ffmpeg.tar.xz -C /tmp
       FFDIR=$(tar -tf /tmp/ffmpeg.tar.xz | head -1 | cut -d/ -f1)
-      cp /tmp/$FFDIR/ffmpeg /tmp/$FFDIR/ffprobe /usr/local/bin/
-      chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
+      mkdir -p /app/bin
+      cp /tmp/$FFDIR/ffmpeg /tmp/$FFDIR/ffprobe /app/bin/
+      chmod +x /app/bin/ffmpeg /app/bin/ffprobe
 
       npm install --prefix frontend
       npm run build --prefix frontend
       go build -o main .
 
-    startCommand: ./main
+    startCommand: PATH="/app/bin:$PATH" ./main
 
     envVars:
       - key: PORT
