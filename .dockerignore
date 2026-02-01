@@ -46,7 +46,8 @@ temp/
 frontend/dist
 
 # Videos for testing
-狗狗影片/
+# Videos for testing
+# assets_bgm/
 *.mp4
 *.mov
 *.avi

@@ -61,7 +61,7 @@ pkill -f "vite" 2>/dev/null
 # 啟動後端（清除環境變數以確保讀取 .env）
 echo "📡 啟動後端伺服器 (http://localhost:8080)..."
 # 先編譯
-go build -o dog-memory-app main.go
+go build -o dog-memory-app main.go config.go
 # 用乾淨的環境啟動
 env -i PATH=$PATH HOME=$HOME ./dog-memory-app > logs/backend.log 2>&1 &
 BACKEND_PID=$!

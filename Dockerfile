@@ -43,7 +43,8 @@ FROM alpine:3.19
 RUN apk add --no-cache \
     ffmpeg \
     ca-certificates \
-    tzdata
+    tzdata \
+    font-noto-cjk
 
 # Set timezone
 ENV TZ=Asia/Taipei
@@ -56,8 +57,11 @@ COPY --from=go-builder /app/main .
 # Copy frontend dist from builder
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
+# Copy BGM assets
+COPY "assets_bgm" "./assets_bgm"
+
 # Create storage directories
-RUN mkdir -p storage/videos storage/projects storage/frames
+RUN mkdir -p storage/videos storage/projects storage/frames storage/highlights
 
 # Set default environment variables
 ENV PORT=8080

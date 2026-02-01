@@ -49,6 +49,7 @@ type Project struct {
 	EndingImage       string      `json:"ending_image,omitempty"`       // 結尾圖片路徑
 	OwnerMessage      string      `json:"owner_message,omitempty"`      // 主人想對狗狗說的話
 	Status            string      `json:"status"`                       // pending, analyzing, generating_story, generating_video, completed, failed
+	Progress          int         `json:"progress"`                     // 0-100
 	Videos            []VideoInfo `json:"videos"`
 	Story             *Story      `json:"story,omitempty"`
 	FinalVideo        string      `json:"final_video,omitempty"`
@@ -135,6 +136,9 @@ var (
 func main() {
 	// Load environment variables
 	godotenv.Load()
+
+	// Load configuration from env
+	LoadConfig()
 
 	port := getEnv("PORT", "8080")
 	storagePath = getEnv("STORAGE_PATH", "./storage")
@@ -308,6 +312,7 @@ func main() {
 			OwnerRelationship: req.OwnerRelationship,
 			StoryMode:         req.StoryMode,
 			Status:            "pending",
+			Progress:          0,
 			Videos:            []VideoInfo{},
 			CreatedAt:         time.Now(),
 			UpdatedAt:         time.Now(),
@@ -522,6 +527,7 @@ func main() {
 			"story_mode":         project.StoryMode,
 			"ending_image":       project.EndingImage,
 			"status":             project.Status,
+			"progress":           project.Progress,
 			"videos":             project.Videos,
 			"created_at":         project.CreatedAt,
 			"updated_at":         project.UpdatedAt,
@@ -730,15 +736,15 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 		return nil, fmt.Errorf("no frames provided")
 	}
 
-	// 智能選擇最多 10 張代表性圖片（均勻分佈）
-	maxImages := 10
+	// 智能選擇最多 N 張代表性圖片（均勻分佈）
+	maxImages := MaxAIImages
 	selectedFrames := []string{}
 
 	if len(framePaths) <= maxImages {
 		// 圖片數量不多，全部使用
 		selectedFrames = framePaths
 	} else {
-		// 均勻選擇 10 張圖片
+		// 均勻選擇 N 張圖片
 		step := float64(len(framePaths)) / float64(maxImages)
 		for i := 0; i < maxImages; i++ {
 			idx := int(float64(i) * step)
@@ -1019,24 +1025,56 @@ func markJobFailed(jobID, errorMsg string) {
 // ============================================================================
 
 func processProject(projectID string) {
+	start := time.Now()
+
 	projectsMutex.Lock()
 	project := projects[projectID]
 	project.Status = "analyzing"
+	project.Progress = 5
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
 
 	log.Printf("Processing project %s with %d videos", projectID, len(project.Videos))
 
-	// Step 1: Analyze all videos (繼續處理即使有錯誤)
-	successCount := 0
+	// Step 1: Analyze all videos (concurrently)
+	log.Printf("Starting parallel analysis for %d videos", len(project.Videos))
+
+	var wg sync.WaitGroup
+	successChan := make(chan bool, len(project.Videos))
+	totalVideos := len(project.Videos)
+	completedVideos := 0
+
 	for i := range project.Videos {
-		if err := analyzeVideo(project, i); err != nil {
-			log.Printf("⚠️ Warning: Failed to analyze video %s: %v (continuing)", project.Videos[i].ID, err)
-			// 不要立即返回，繼續處理其他影片
-			continue
-		}
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+
+			if err := analyzeVideo(project, index); err != nil {
+				log.Printf("⚠️ Warning: Failed to analyze video %s: %v (continuing)", project.Videos[index].ID, err)
+				return // Don't send to successChan
+			}
+			successChan <- true
+
+			// Update progress incrementally for analysis (5% to 45%)
+			projectsMutex.Lock()
+			completedVideos++
+			// Progress from 5 to 45 mainly based on video analysis
+			project.Progress = 5 + int(40.0*float64(completedVideos)/float64(totalVideos))
+			projectsMutex.Unlock()
+		}(i)
+	}
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+	close(successChan)
+
+	successCount := 0
+	for range successChan {
 		successCount++
 	}
+
+	analysisDuration := time.Since(start)
+	log.Printf("Step 1: Video Analysis took %v", analysisDuration)
 
 	// 至少要有一半的影片分析成功才能繼續
 	if successCount == 0 {
@@ -1049,37 +1087,57 @@ func processProject(projectID string) {
 	// Step 2: Generate story with AI
 	projectsMutex.Lock()
 	project.Status = "generating_story"
+	project.Progress = 50
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
 
+	storyStart := time.Now()
 	story, err := generateStoryWithAI(project)
 	if err != nil {
 		markProjectFailed(projectID, "Failed to generate story: "+err.Error())
 		return
 	}
+	storyDuration := time.Since(storyStart)
+	log.Printf("Step 2: Story Generation took %v", storyDuration)
 
 	projectsMutex.Lock()
 	project.Story = story
 	project.Status = "generating_video"
+	project.Progress = 70
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
 
 	// Step 3: Generate TTS audio for each chapter
+	// Consider TTS as part of video generation phase (70-80%)
+	ttsStart := time.Now()
 	for i := range project.Story.Chapters {
 		if err := generateTTS(project, i); err != nil {
 			log.Printf("Warning: TTS generation failed for chapter %d: %v", i, err)
 			// Continue without audio
 		}
+		// Increment progress slightly
+		projectsMutex.Lock()
+		project.Progress = 70 + int(10.0*float64(i+1)/float64(len(project.Story.Chapters)))
+		projectsMutex.Unlock()
 	}
+	ttsDuration := time.Since(ttsStart)
+	log.Printf("Step 3: TTS Generation took %v", ttsDuration)
 
 	// Step 4: Composite final video (with subtitles and background music)
+	compositeStart := time.Now()
 	if err := compositeVideo(project); err != nil {
 		markProjectFailed(projectID, "Failed to composite video: "+err.Error())
 		return
 	}
+	compositeDuration := time.Since(compositeStart)
+	log.Printf("Step 4: Video Composition took %v", compositeDuration)
+
+	totalDuration := time.Since(start)
+	log.Printf("🔥 Total Processing Time: %v", totalDuration)
 
 	projectsMutex.Lock()
 	project.Status = "completed"
+	project.Progress = 100
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
 
@@ -1091,10 +1149,17 @@ func analyzeVideo(project *Project, videoIndex int) error {
 
 	log.Printf("Analyzing video %s (%s)", video.ID, video.OriginalName)
 
-	// Extract frames - 每2秒一張 (fps=0.5)
+	// Extract frames - 使用 config.go 中的設定
 	os.MkdirAll(video.FramesDir, 0755)
 	outputPattern := filepath.Join(video.FramesDir, "frame_%04d.jpg")
-	cmd := exec.Command("ffmpeg", "-i", video.Path, "-vf", "fps=0.5,scale=640:360", outputPattern)
+	// -t: 只讀取前 N 秒
+	// fps: 1/AnalysisInterval fps (e.g., 2.0s -> 0.5 fps)
+	fps := 1.0 / AnalysisInterval
+	cmd := exec.Command("ffmpeg",
+		"-t", fmt.Sprintf("%d", AnalysisDurationSeconds),
+		"-i", video.Path,
+		"-vf", fmt.Sprintf("fps=%.4f,scale=640:360", fps),
+		outputPattern)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ffmpeg error: %v, output: %s", err, string(output))
 	}
@@ -1125,20 +1190,26 @@ func analyzeVideo(project *Project, videoIndex int) error {
 		}
 	}
 
-	// 根據 AI 分析結果創建 segments（每個 segment = 6 秒）
-	segmentSize := 3 // 3 frames = 6 seconds at fps=0.5 (2s per frame)
+	// 根據 AI 分析結果創建 segments
+	// frames per segment = SegmentDurationSeconds / AnalysisInterval
+	framesPerSegment := int(float64(SegmentDurationSeconds) / AnalysisInterval)
+	if framesPerSegment < 1 {
+		framesPerSegment = 1
+	}
 	segments := []Segment{}
 
-	for i := 0; i < len(files); i += segmentSize {
-		end := i + segmentSize
+	frameDuration := AnalysisInterval
+
+	for i := 0; i < len(files); i += framesPerSegment {
+		end := i + framesPerSegment
 		if end > len(files) {
 			end = len(files)
 		}
 
 		segment := Segment{
 			Index:      len(segments) + 1,
-			Start:      float64(i) * 2.0, // 2.0s per frame at fps=0.5
-			End:        float64(end) * 2.0,
+			Start:      float64(i) * frameDuration,
+			End:        float64(end) * frameDuration,
 			FramePaths: files[i:end],
 			Analysis:   analysis, // 所有 segment 使用相同的分析結果
 		}
@@ -1150,8 +1221,8 @@ func analyzeVideo(project *Project, videoIndex int) error {
 
 	// 如果有互動，將整個影片（或前幾個 segment）標記為 highlight
 	if analysis.HasDog && analysis.HasHuman && analysis.InteractionType != "none" {
-		// 取前 15 秒作為 highlight
-		maxHighlightDuration := 15.0
+		// 取前 AnalysisDurationSeconds 秒作為 highlight
+		maxHighlightDuration := float64(AnalysisDurationSeconds)
 		for _, segment := range segments {
 			if segment.End <= maxHighlightDuration {
 				if len(highlights) == 0 {
@@ -1536,13 +1607,11 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		ownerTitle,
 		modeEmotion,
 		ownerTitle,
-		ownerTitle,
-		ownerTitle,
 		modeExamples,
 		ownerTitle)
 
 	log.Printf("Dog response prompt (mode=%s): %s", project.StoryMode, prompt)
-	log.Printf("ＡＬＬ prompt：", prompt)
+	log.Printf("ＡＬＬ prompt：%s", prompt)
 
 	requestBody := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -1624,7 +1693,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	// 檢查長度與結尾，避免看起來像「講到一半就被切斷」
 	runeCount := len([]rune(response))
 	log.Printf("Generated dog response (cleaned, runes=%d): %s", runeCount, response)
-	
+
 	// 強制限制字數在 40-60 字之間
 	if runeCount > 60 {
 		log.Printf("⚠️ Dog response too long (%d chars), truncating to 60 chars", runeCount)
@@ -2093,15 +2162,8 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	// 創建結尾圖片影片（10秒）
 	endingVideoPath := filepath.Join(outputDir, "ending_segment.mp4")
 
-	// 選擇字體 (macOS 使用 STHeiti 或 PingFang，其他使用默認或 Arial)
-	// STHeiti (华文黑体) 通常比 PingFang 更容易被 FFmpeg 識別
-	fontFile := "/System/Library/Fonts/STHeiti Medium.ttc"
-	if _, err := os.Stat(fontFile); err != nil {
-		fontFile = "/System/Library/Fonts/PingFang.ttc"
-		if _, err := os.Stat(fontFile); err != nil {
-			fontFile = "Arial" // Fallback
-		}
-	}
+	// 選擇字體 (macOS 使用 STHeiti 或 PingFang，Linux 使用 Noto Sans CJK)
+	fontFile := getFontPath()
 	log.Printf("🔤 Using font: %s", fontFile)
 
 	// 字體大小改為 24，適中顯示
@@ -2727,21 +2789,11 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	log.Printf("📄 Subtitle file: %s", srtPath)
 
 	// 複製字幕檔案到沒有空格的臨時路徑（避免 FFmpeg filter 路徑解析問題）
-	tempSrtPath := filepath.Join(os.TempDir(), "subtitles_temp.srt")
-	srtContent, err := os.ReadFile(srtPath)
-	if err != nil {
-		return fmt.Errorf("failed to read srt file: %v", err)
-	}
-	if err := os.WriteFile(tempSrtPath, srtContent, 0644); err != nil {
-		return fmt.Errorf("failed to write temp srt file: %v", err)
-	}
-	defer os.Remove(tempSrtPath)
-
-	log.Printf("📄 Using temp subtitle file: %s", tempSrtPath)
-
+	// 在 Linux/Alpine 下，subtitles filter 會處理特殊路徑的問題
+	fontPath := getFontPath()
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
-		"-vf", fmt.Sprintf("subtitles=%s:force_style='%s'", tempSrtPath, subtitleStyle),
+		"-vf", fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", srtPath, subtitleStyle, fontPath),
 		"-c:a", "copy",
 		"-y",
 		outputVideo,
@@ -2779,33 +2831,26 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 	}
 
 	// 檢查是否有指定的背景音樂檔案
-	specificBGM := "./狗狗影片/bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3"
+	bgmDir := "./assets_bgm"
+	specificBGM := filepath.Join(bgmDir, "bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3")
 	musicCopied := false
 
 	log.Printf("🎵 Checking for specific BGM file: %s", specificBGM)
-	if stat, err := os.Stat(specificBGM); err == nil {
-		log.Printf("✅ Found specific BGM file: %s (size: %d bytes)", specificBGM, stat.Size())
-
-		// 複製到輸出目錄以避免檔名問題
-		inputMusic, err := os.ReadFile(specificBGM)
-		if err == nil {
-			log.Printf("📖 Successfully read BGM file, size: %d bytes", len(inputMusic))
-			if err := os.WriteFile(musicPath, inputMusic, 0644); err != nil {
-				log.Printf("❌ Failed to copy BGM, falling back to generation: %v", err)
-			} else {
-				// 驗證寫入
-				if verifyStats, err := os.Stat(musicPath); err == nil {
-					log.Printf("✅ Successfully copied BGM to: %s (size: %d bytes)", musicPath, verifyStats.Size())
-					musicCopied = true
-				} else {
-					log.Printf("❌ Failed to verify copied BGM file: %v", err)
-				}
-			}
-		} else {
-			log.Printf("❌ Failed to read BGM, falling back to generation: %v", err)
+	if _, err := os.Stat(specificBGM); err == nil {
+		log.Printf("✅ Found specific BGM file: %s", specificBGM)
+		if err := copyFile(specificBGM, musicPath); err == nil {
+			musicCopied = true
 		}
 	} else {
-		log.Printf("❌ Specific BGM not found: %s, error: %v", specificBGM, err)
+		log.Printf("❌ Specific BGM not found, searching in %s...", bgmDir)
+		// 如果精確匹配失敗，尋找目錄下的第一個 mp3
+		files, _ := filepath.Glob(filepath.Join(bgmDir, "*.mp3"))
+		if len(files) > 0 {
+			log.Printf("✅ Found alternative BGM: %s", files[0])
+			if err := copyFile(files[0], musicPath); err == nil {
+				musicCopied = true
+			}
+		}
 	}
 
 	// 如果沒有複製成功，則生成
@@ -2903,6 +2948,44 @@ func generateBackgroundMusic(outputPath string, duration float64) error {
 	}
 
 	return nil
+}
+
+func getFontPath() string {
+	// macOS
+	macFonts := []string{
+		"/System/Library/Fonts/STHeiti Medium.ttc",
+		"/System/Library/Fonts/PingFang.ttc",
+		"/Library/Fonts/Arial Unicode.ttf",
+	}
+
+	// Linux (Cloud Run / Alpine)
+	linuxFonts := []string{
+		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
+		"/usr/share/fonts/TTF/NotoSansCJK-Regular.ttc",
+	}
+
+	for _, f := range macFonts {
+		if _, err := os.Stat(f); err == nil {
+			return f
+		}
+	}
+
+	for _, f := range linuxFonts {
+		if _, err := os.Stat(f); err == nil {
+			return f
+		}
+	}
+
+	return "Arial" // 最後手段
+}
+
+func copyFile(src, dst string) error {
+	input, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, input, 0644)
 }
 
 // ============================================================================
