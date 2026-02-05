@@ -56,7 +56,9 @@ echo ""
 
 # 清理舊的進程
 pkill -f "go run main.go" 2>/dev/null
+pkill -f "dog-memory-app" 2>/dev/null
 pkill -f "vite" 2>/dev/null
+sleep 1  # 等待進程完全終止
 
 # 啟動後端（清除環境變數以確保讀取 .env）
 echo "📡 啟動後端伺服器 (http://localhost:8080)..."
@@ -78,106 +80,33 @@ fi
 echo "✅ 後端啟動成功 (PID: $BACKEND_PID)"
 echo ""
 
-# 詢問是否啟動前端開發伺服器
-read -p "🎨 是否啟動前端開發伺服器 (熱重載)? [y/N] " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "📡 啟動前端開發伺服器 (http://localhost:3000)..."
-    cd frontend
-    npm run dev > ../logs/frontend.log 2>&1 &
-    FRONTEND_PID=$!
-    cd ..
-    echo "✅ 前端開發伺服器啟動成功 (PID: $FRONTEND_PID)"
-    echo ""
-    echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║   ✅ 服務啟動完成！                                            ║"
-    echo "╠═══════════════════════════════════════════════════════════════╣"
-    echo "║   🌐 前端開發介面：http://localhost:3000                      ║"
-    echo "║   📡 後端 API：    http://localhost:8080/api                  ║"
-    echo "║   📊 健康檢查：    http://localhost:8080/api/health           ║"
-    echo "╠═══════════════════════════════════════════════════════════════╣"
-    echo "║   📝 日誌位置：                                                ║"
-    echo "║      - 後端：logs/backend.log                                 ║"
-    echo "║      - 前端：logs/frontend.log                                ║"
-    echo "╠═══════════════════════════════════════════════════════════════╣"
-    echo "║   🛑 停止服務：bash stop.sh                                   ║"
-    echo "╚═══════════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "後端 PID: $BACKEND_PID" > logs/pids.txt
-    echo "前端 PID: $FRONTEND_PID" >> logs/pids.txt
-else
-    echo ""
-    echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║   ✅ 後端服務啟動完成！                                        ║"
-    echo "╠═══════════════════════════════════════════════════════════════╣"
-    echo "║   🌐 前端介面：    http://localhost:8080                      ║"
-    echo "║   📡 後端 API：    http://localhost:8080/api                  ║"
-    echo "║   📊 健康檢查：    http://localhost:8080/api/health           ║"
-    echo "╠═══════════════════════════════════════════════════════════════╣"
-    echo "║   📝 日誌位置：logs/backend.log                               ║"
-    echo "║   🛑 停止服務：bash stop.sh                                   ║"
-    echo "╚═══════════════════════════════════════════════════════════════╝"
-    echo ""
-    echo "後端 PID: $BACKEND_PID" > logs/pids.txt
-fi
-
-# 保持腳本運行
-echo "💡 提示：按 Ctrl+C 可查看日誌或停止服務"
+# 啟動前端開發伺服器
+echo "📡 啟動前端開發伺服器 (http://localhost:3000)..."
+cd frontend
+npm run dev > ../logs/frontend.log 2>&1 &
+FRONTEND_PID=$!
+cd ..
+echo "✅ 前端開發伺服器啟動成功 (PID: $FRONTEND_PID)"
 echo ""
 
-# 選擇操作
-while true; do
-    echo "選擇操作："
-    echo "  1) 查看後端日誌"
-    echo "  2) 查看前端日誌"
-    echo "  3) 測試上傳影片"
-    echo "  4) 打開瀏覽器"
-    echo "  5) 停止所有服務並退出"
-    echo ""
-    read -p "請選擇 [1-5]: " choice
-    
-    case $choice in
-        1)
-            echo "=== 後端日誌 (按 Ctrl+C 返回) ==="
-            tail -f logs/backend.log
-            ;;
-        2)
-            if [ -f "logs/frontend.log" ]; then
-                echo "=== 前端日誌 (按 Ctrl+C 返回) ==="
-                tail -f logs/frontend.log
-            else
-                echo "前端開發伺服器未啟動"
-            fi
-            ;;
-        3)
-            if [ -f "tmp_rovodev_test_video.mp4" ]; then
-                bash test_upload.sh tmp_rovodev_test_video.mp4
-            else
-                echo "建立測試影片..."
-                ffmpeg -f lavfi -i testsrc=duration=10:size=1280x720:rate=30 \
-                       -f lavfi -i sine=frequency=1000:duration=10 \
-                       -c:v libx264 -pix_fmt yuv420p -c:a aac \
-                       -y tmp_rovodev_test_video.mp4 2>/dev/null
-                bash test_upload.sh tmp_rovodev_test_video.mp4
-            fi
-            ;;
-        4)
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                open http://localhost:8080/
-            elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-                xdg-open http://localhost:8080/ 2>/dev/null || echo "請手動開啟: http://localhost:8080/"
-            else
-                echo "請手動開啟: http://localhost:8080/"
-            fi
-            ;;
-        5)
-            echo "🛑 停止所有服務..."
-            bash stop.sh
-            exit 0
-            ;;
-        *)
-            echo "無效選擇"
-            ;;
-    esac
-    echo ""
-done
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║   ✅ 服務啟動完成！                                            ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║   🌐 前端開發介面：http://localhost:3000                      ║"
+echo "║   📡 後端 API：    http://localhost:8080/api                  ║"
+echo "║   📊 健康檢查：    http://localhost:8080/api/health           ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║   📝 日誌位置：                                                ║"
+echo "║      - 後端：logs/backend.log                                 ║"
+echo "║      - 前端：logs/frontend.log                                ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║   🛑 停止服務：bash stop.sh                                   ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+
+echo "後端 PID: $BACKEND_PID" > logs/pids.txt
+echo "前端 PID: $FRONTEND_PID" >> logs/pids.txt
+
+# 保持腳本運行並顯示後端日誌
+echo "📋 正在顯示後端日誌 (按 Ctrl+C 停止服務)..."
+tail -f logs/backend.log

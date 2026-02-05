@@ -127,6 +127,9 @@ var (
 	storagePath   string
 	aiAPIKey      string
 	aiAPIEndpoint string
+	aiModelName   string
+	aiVisionModel string // 視覺分析模型
+	aiTextModel   string // 文字生成模型
 )
 
 // ============================================================================
@@ -143,7 +146,10 @@ func main() {
 	port := getEnv("PORT", "8080")
 	storagePath = getEnv("STORAGE_PATH", "./storage")
 	aiAPIKey = getEnv("AI_API_KEY", "")
-	aiAPIEndpoint = getEnv("AI_API_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+	aiAPIEndpoint = getEnv("AI_API_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions")
+	aiModelName = getEnv("AI_MODEL_NAME", "google/gemini-2.0-flash-001")
+	aiVisionModel = getEnv("AI_VISION_MODEL", aiModelName) // 預設使用主模型
+	aiTextModel = getEnv("AI_TEXT_MODEL", aiModelName)     // 預設使用主模型
 
 	// Create storage directories
 	createStorageDirectories()
@@ -775,10 +781,18 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 
 	log.Printf("Successfully compressed %d images for video %s", len(base64Images), videoID)
 
-	// 構建 API 請求
-	parts := []map[string]interface{}{
-		{
-			"text": fmt.Sprintf(`這些是來自同一個影片的 %d 張連續截圖（每隔 2 秒一張）。請綜合分析整個影片，判斷以下內容並以 JSON 格式回應：
+	// 構建 OpenRouter (OpenAI-compatible) API 請求
+	// OpenAI Chat Completion with Vision format
+	log.Printf("🤖 Using Vision Model: %s", aiVisionModel)
+	requestBody := map[string]interface{}{
+		"model": aiVisionModel,
+		"messages": []map[string]interface{}{
+			{
+				"role": "user",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": fmt.Sprintf(`這些是來自同一個影片的 %d 張連續截圖（每隔 2 秒一張）。請綜合分析整個影片，判斷以下內容並以 JSON 格式回應：
 
 {
   "has_dog": true/false,
@@ -798,104 +812,86 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 **重要**：這些圖片來自同一個完整影片，請綜合所有圖片進行分析。
 
 只回傳 JSON，不要其他文字。`, len(base64Images)),
+					},
+				},
+			},
 		},
+		"temperature": 0.4,
+		"max_tokens":  2000,
 	}
 
-	// 添加所有圖片
+	// 添加所有圖片 (OpenAI Vision Format)
+	contentList := requestBody["messages"].([]map[string]interface{})[0]["content"].([]map[string]interface{})
 	for _, imgData := range base64Images {
-		parts = append(parts, map[string]interface{}{
-			"inline_data": map[string]string{
-				"mime_type": "image/jpeg",
-				"data":      imgData,
+		contentList = append(contentList, map[string]interface{}{
+			"type": "image_url",
+			"image_url": map[string]string{
+				"url": fmt.Sprintf("data:image/jpeg;base64,%s", imgData),
 			},
 		})
 	}
-
-	requestBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
-			{
-				"parts": parts,
-			},
-		},
-		"generationConfig": map[string]interface{}{
-			"temperature":      0.4,
-			"maxOutputTokens":  2000, // 增加到 2000，避免 MAX_TOKENS 錯誤
-			"responseMimeType": "application/json",
-		},
-	}
+	requestBody["messages"].([]map[string]interface{})[0]["content"] = contentList
 
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	// 發送請求
-	url := fmt.Sprintf("%s?key=%s", aiAPIEndpoint, aiAPIKey)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// 發送請求 (OpenRouter)
+	req, err := http.NewRequest("POST", aiAPIEndpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %v", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", aiAPIKey))
+	req.Header.Set("HTTP-Referer", "https://pawdiary.app") // Required by OpenRouter
+	req.Header.Set("X-Title", "Paw Diary")
 
-	client := &http.Client{Timeout: 60 * time.Second} // 增加超時時間
+	client := &http.Client{Timeout: 90 * time.Second} // OpenRouter might be slower for Vision
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
-	}
-
-	// 讀取回應
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	// 解析回應
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// 解析 OpenAI 格式回應
 	var apiResponse struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-			FinishReason string `json:"finishReason"`
-		} `json:"candidates"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
 		Error *struct {
-			Code    int    `json:"code"`
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %v, body: %s", err, string(bodyBytes))
 	}
 
-	// 檢查錯誤
 	if apiResponse.Error != nil {
-		return nil, fmt.Errorf("Gemini API error: %d - %s", apiResponse.Error.Code, apiResponse.Error.Message)
+		return nil, fmt.Errorf("AI API Error: %s", apiResponse.Error.Message)
 	}
 
-	if len(apiResponse.Candidates) == 0 {
-		return nil, fmt.Errorf("no candidates in response")
+	if len(apiResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
 	}
 
-	candidate := apiResponse.Candidates[0]
+	content := apiResponse.Choices[0].Message.Content
+	log.Printf("AI response content: %s", content)
 
-	// 檢查內容
-	if candidate.Content.Parts == nil || len(candidate.Content.Parts) == 0 {
-		log.Printf("Gemini returned empty content for video %s. FinishReason: %s, Response: %s",
-			videoID, candidate.FinishReason, string(bodyBytes))
-		return nil, fmt.Errorf("no content (finishReason: %s)", candidate.FinishReason)
-	}
-
-	// 解析 JSON
-	content := candidate.Content.Parts[0].Text
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(content, "```")
@@ -903,8 +899,19 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 
 	var analysis Analysis
 	if err := json.Unmarshal([]byte(content), &analysis); err != nil {
+		// Fallback: search for json block
+		start := strings.Index(content, "{")
+		end := strings.LastIndex(content, "}")
+		if start != -1 && end != -1 && end > start {
+			jsonContent := content[start : end+1]
+			if err2 := json.Unmarshal([]byte(jsonContent), &analysis); err2 == nil {
+				goto AnalysisSuccess
+			}
+		}
 		return nil, fmt.Errorf("failed to parse AI response: %v, content: %s", err, content)
 	}
+
+AnalysisSuccess:
 
 	log.Printf("✅ Video %s analyzed: has_dog=%v, has_human=%v, interaction=%s, emotion=%s, caption=%s",
 		videoID, analysis.HasDog, analysis.HasHuman, analysis.InteractionType, analysis.Emotion, analysis.ShortCaption)
@@ -1109,19 +1116,20 @@ func processProject(projectID string) {
 
 	// Step 3: Generate TTS audio for each chapter
 	// Consider TTS as part of video generation phase (70-80%)
-	ttsStart := time.Now()
-	for i := range project.Story.Chapters {
-		if err := generateTTS(project, i); err != nil {
-			log.Printf("Warning: TTS generation failed for chapter %d: %v", i, err)
-			// Continue without audio
-		}
-		// Increment progress slightly
-		projectsMutex.Lock()
-		project.Progress = 70 + int(10.0*float64(i+1)/float64(len(project.Story.Chapters)))
-		projectsMutex.Unlock()
-	}
-	ttsDuration := time.Since(ttsStart)
-	log.Printf("Step 3: TTS Generation took %v", ttsDuration)
+	// ttsStart := time.Now()
+	// for i := range project.Story.Chapters {
+	// 	if err := generateTTS(project, i); err != nil {
+	// 		log.Printf("Warning: TTS generation failed for chapter %d: %v", i, err)
+	// 		// Continue without audio
+	// 	}
+	// 	// Increment progress slightly
+	// 	projectsMutex.Lock()
+	// 	project.Progress = 70 + int(10.0*float64(i+1)/float64(len(project.Story.Chapters)))
+	// 	projectsMutex.Unlock()
+	// }
+	// ttsDuration := time.Since(ttsStart)
+	// log.Printf("Step 3: TTS Generation took %v", ttsDuration)
+	log.Printf("Step 3: TTS Generation Skipped (User Request)")
 
 	// Step 4: Composite final video (with subtitles and background music)
 	compositeStart := time.Now()
@@ -1184,7 +1192,7 @@ func analyzeVideo(project *Project, videoIndex int) error {
 		analysis = &Analysis{
 			HasDog:          true,
 			HasHuman:        true,
-			InteractionType: "none",
+			InteractionType: "playing",
 			Emotion:         "neutral",
 			ShortCaption:    "影片分析",
 		}
@@ -1366,26 +1374,32 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		modeExamples,
 		ownerTitle)
 
-	// 調用 Gemini AI
+	// 調用 OpenRouter (OpenAI-compatible) API
+	log.Printf("🤖 Using Text Model for story: %s", aiTextModel)
 	requestBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
+		"model": aiTextModel,
+		"messages": []map[string]interface{}{
 			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
+				"role": "user",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": prompt,
+					},
 				},
 			},
 		},
-		"generationConfig": map[string]interface{}{
-			"temperature":      0.8, // 稍微提高溫度，讓語氣更活潑
-			"maxOutputTokens":  8000,
-			"responseMimeType": "application/json",
-		},
+		"temperature": 0.8,
+		"max_tokens":  8000,
 	}
 
 	jsonData, _ := json.Marshal(requestBody)
-	url := fmt.Sprintf("%s?key=%s", aiAPIEndpoint, aiAPIKey)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// OpenRouter API
+	req, _ := http.NewRequest("POST", aiAPIEndpoint, bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", aiAPIKey))
+	req.Header.Set("HTTP-Referer", "https://pawdiary.app")
+	req.Header.Set("X-Title", "Paw Diary")
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
@@ -1396,34 +1410,35 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// OpenAI Response Structure
 	var apiResponse struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode response: %v, body: %s", err, string(bodyBytes))
 	}
 
-	if len(apiResponse.Candidates) == 0 {
-		log.Printf("Story generation failed: no candidates. Response: %s", string(bodyBytes))
-		return nil, fmt.Errorf("no content in AI response")
+	if apiResponse.Error != nil {
+		return nil, fmt.Errorf("AI API Error: %s", apiResponse.Error.Message)
 	}
 
-	candidate := apiResponse.Candidates[0]
-
-	if len(candidate.Content.Parts) == 0 {
-		log.Printf("Story generation failed: no parts. FinishReason: %v, Response: %s",
-			candidate, string(bodyBytes))
-		return nil, fmt.Errorf("no content in AI response (finishReason may be MAX_TOKENS or SAFETY)")
+	if len(apiResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no choices in response")
 	}
 
-	content := apiResponse.Candidates[0].Content.Parts[0].Text
+	content := apiResponse.Choices[0].Message.Content
 	log.Printf("Story AI response content: %s", content)
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")
@@ -1548,9 +1563,18 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		modeNote = "請用具體畫面（等你回家、一起睡覺、聽你說話、跟著你走路…）來表達思念和感謝，而不是只重複『謝謝你』『我愛你』這些字。整體情緒要溫暖、讓人有被好好抱住的感覺。"
 	}
 
+	// 根據模式設定基調與語氣指令
+	var toneInstruction string
+	if project.StoryMode == "cute" {
+		toneInstruction = "用天真、直率、充滿活力的語氣說話，就像你平常最開心的樣子。不用刻意裝成熟，直接表達你單純的愛，但也依然要真誠。"
+	} else {
+		// Default / Warm
+		toneInstruction = "用成熟、溫柔的大人語氣說話，好像一個長大後的孩子在安慰自己最重要的家人。"
+	}
+
 	// 建立 prompt：讓狗狗在結尾說一段「成熟、真心安慰媽媽」的告白
 	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s。你的「%s」剛剛對你說了一段很重要的話，裡面充滿了想念和感謝。
-	請你以一隻懂事、成熟、會心疼%s的狗狗身份，對 %s 說一段真心的結尾告白。這段話會出現在故事的最後，但內容本身不要提到「影片」「畫面」這些字，就當作你真的站在她面前，安安靜靜地把心裡話說完。
+	請你以一隻%s的狗狗身份，對 %s 說一段真心的結尾告白。這段話會出現在故事的最後，但內容本身不要提到「影片」「畫面」這些字，就當作你真的站在她面前，安安靜靜地把心裡話說完。
 
 	【你的角色設定】
 	- 你是：%s
@@ -1566,7 +1590,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	請以「狗狗自己的第一人稱（我）」回應，創作一段給 %s 的結尾告白，遵守以下要求：
 
 	1. 語氣：
-	   - 用成熟、溫柔的大人語氣說話，好像一個長大後的孩子在安慰自己最重要的家人。
+	   - %s
 	   - 可以帶一點撒嬌或俏皮，但整體要穩定、真誠、讓人覺得被好好抱住。
 	   - 根據當前模式維持風格：%s。
 
@@ -1576,17 +1600,17 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	   - 表達你對她的愛、感激和陪伴
 
 	3. 字數與句子：
-	   - **重要！！！嚴格控制在 40-60 個中文字之間**
-	   - **絕對不能超過 60 字，也不能少於 40 字**
-	   - 只寫 2-3 句短句，不要寫長段落
+	   - **重要！！！嚴格控制在 80-100 個中文字之間**
+	   - **絕對不能超過 100 字，也不能少於 80 字**
+	   - 不要寫太短，多說一點心裡話，讓表達更完整
 	   - 簡潔有力，每個字都要有意義
-	   - 如果超過 60 字，請刪減內容直到符合字數
+	   - 如果超過 100 字，請刪減內容直到符合字數
 
 	4. 稱呼與限制：
 	   - 回應中要直接叫「%s」至少一次
 	   - 不要使用「汪汪」「嗚嗚」這類擬聲詞
 	   - 不要提到「影片」「畫面」等詞
-	   - **再次強調：總字數必須在 40-60 字之間，請務必計算字數**
+	   - **再次強調：總字數必須在 80-100 字之間，請務必計算字數**
 	   - 只回傳狗狗說的話，不要任何其他內容
 
 	【風格示意（只參考語氣，不要照抄）】：
@@ -1596,7 +1620,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		project.DogName,
 		project.DogBreed,
 		ownerTitle,
-		ownerTitle,
+		modeStyle,
 		ownerTitle,
 		modeStyle,
 		modeEmotion,
@@ -1605,6 +1629,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		project.OwnerMessage,
 		strings.Join(videoDescriptions, "\n"),
 		ownerTitle,
+		toneInstruction,
 		modeEmotion,
 		ownerTitle,
 		modeExamples,
@@ -1613,31 +1638,32 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	log.Printf("Dog response prompt (mode=%s): %s", project.StoryMode, prompt)
 	log.Printf("ＡＬＬ prompt：%s", prompt)
 
+	// 調用 OpenRouter (OpenAI-compatible) API
+	log.Printf("🤖 Using Text Model for dog response: %s", aiTextModel)
 	requestBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
+		"model": aiTextModel,
+		"messages": []map[string]interface{}{
 			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
+				"role": "user",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": prompt,
+					},
 				},
 			},
 		},
-		"generationConfig": map[string]interface{}{
-			"temperature":     0.9,
-			"maxOutputTokens": 2000,
-		},
-		// 放寬安全過濾，避免寵物紀念內容被誤判為敏感內容
-		"safetySettings": []map[string]interface{}{
-			{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-			{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-			{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-			{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-		},
+		"temperature": 0.9,
+		"max_tokens":  2000,
 	}
 
 	jsonData, _ := json.Marshal(requestBody)
-	url := fmt.Sprintf("%s?key=%s", aiAPIEndpoint, aiAPIKey)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// OpenRouter API
+	req, _ := http.NewRequest("POST", aiAPIEndpoint, bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", aiAPIKey))
+	req.Header.Set("HTTP-Referer", "https://pawdiary.app")
+	req.Header.Set("X-Title", "Paw Diary")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -1648,43 +1674,36 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
 
-	// 印出完整 raw response 方便 debug 截斷問題
-	log.Printf("[DEBUG] Gemini raw response for dog_response (len=%d): %s", len(bodyBytes), string(bodyBytes))
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(bodyBytes))
+	}
 
+	// OpenAI Response Structure
 	var apiResponse struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-			FinishReason string `json:"finishReason"`
-		} `json:"candidates"`
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &apiResponse); err != nil {
-		log.Printf("[ERROR] Failed to unmarshal Gemini response: %v", err)
-		return "", err
+		return "", fmt.Errorf("failed to decode response: %v", err)
 	}
 
-	if len(apiResponse.Candidates) == 0 || len(apiResponse.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("no response from AI")
+	if apiResponse.Error != nil {
+		return "", fmt.Errorf("AI API Error: %s", apiResponse.Error.Message)
 	}
 
-	// 將所有 parts 的文字串接起來，避免只取第一個 part 導致內容被截斷
-	var sb strings.Builder
-	for _, part := range apiResponse.Candidates[0].Content.Parts {
-		sb.WriteString(part.Text)
+	if len(apiResponse.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
 	}
-	response := sb.String()
 
-	finishReason := apiResponse.Candidates[0].FinishReason
-	log.Printf("Raw dog response text (finishReason=%s, len=%d): %q", finishReason, len(response), response)
-
-	// 如果被截斷（MAX_TOKENS）或字數太少，給一個警告
-	if finishReason == "MAX_TOKENS" {
-		log.Printf("⚠️ WARNING: dog response was truncated by MAX_TOKENS!")
-	}
+	response := apiResponse.Choices[0].Message.Content
+	log.Printf("Dog AI response: %s", response)
 
 	response = strings.TrimSpace(response)
 	// 去掉可能包起來的引號或書名號
@@ -1694,29 +1713,29 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	runeCount := len([]rune(response))
 	log.Printf("Generated dog response (cleaned, runes=%d): %s", runeCount, response)
 
-	// 強制限制字數在 40-60 字之間
-	if runeCount > 60 {
-		log.Printf("⚠️ Dog response too long (%d chars), truncating to 60 chars", runeCount)
+	// 強制限制字數在 80-100 字之間
+	if runeCount > 100 {
+		log.Printf("⚠️ Dog response too long (%d chars), truncating to 100 chars", runeCount)
 		runes := []rune(response)
-		// 截取前 60 字
-		response = string(runes[:60])
+		// 截取前 100 字
+		response = string(runes[:100])
 		// 找最後一個句號、逗號或感嘆號的位置，在那裡截斷比較自然
 		lastPunc := -1
 		responseRunes := []rune(response)
-		for i := len(responseRunes) - 1; i >= 40; i-- {
+		for i := len(responseRunes) - 1; i >= 80; i-- {
 			if responseRunes[i] == '。' || responseRunes[i] == '，' || responseRunes[i] == '！' {
 				lastPunc = i + 1
 				break
 			}
 		}
-		if lastPunc > 40 {
+		if lastPunc > 80 {
 			response = string(responseRunes[:lastPunc])
 		}
 		runeCount = len([]rune(response))
 		log.Printf("✂️ Truncated to %d chars: %s", runeCount, response)
-	} else if runeCount < 40 {
+	} else if runeCount < 60 { // 放寬下限一點點，避免稍微短一點的被換掉
 		log.Printf("⚠️ Dog response too short (%d chars), using fallback", runeCount)
-		response = fmt.Sprintf("%s，我也最愛最愛你了！每天和你在一起的時光，都是我最幸福的回憶。", ownerTitle)
+		response = fmt.Sprintf("%s，謝謝你這麼愛我。雖然我現在不在你身邊，但我會永遠住在你心裡。記得要開心喔，因為我最喜歡看你笑的樣子了！我會一直在天上守護著你的，永遠愛你。", ownerTitle)
 		runeCount = len([]rune(response))
 	}
 
@@ -2832,7 +2851,14 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 
 	// 檢查是否有指定的背景音樂檔案
 	bgmDir := "./assets_bgm"
-	specificBGM := filepath.Join(bgmDir, "bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3")
+
+	// 根據故事模式選擇背景音樂
+	bgmFilename := "bibi-pianopachelbels-canon-终于弹了这首-世界上最治愈的钢琴曲卡农.mp3" // Default (warm)
+	if project.StoryMode == "cute" {
+		bgmFilename = "lively.mp3"
+	}
+
+	specificBGM := filepath.Join(bgmDir, bgmFilename)
 	musicCopied := false
 
 	log.Printf("🎵 Checking for specific BGM file: %s", specificBGM)

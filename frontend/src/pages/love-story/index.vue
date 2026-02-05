@@ -223,8 +223,7 @@ const currentStep = ref(1)
 const storyMode = ref('warm')
 const storyModes = [
   { value: 'warm', name: '溫馨感人', icon: '💝', desc: '溫柔感性、充滿愛的表達' },
-  { value: 'cute', name: '可愛活潑', icon: '🐾', desc: '活潑撒嬌、充滿元氣' },
-  { value: 'funny', name: '幽默風趣', icon: '😆', desc: '搞笑幽默、逗趣可愛' }
+  { value: 'cute', name: '可愛活潑', icon: '🐾', desc: '活潑撒嬌、充滿元氣' }
 ]
 
 const dogName = ref('')
@@ -401,7 +400,7 @@ const pollProgress = async () => {
         statusMessage.value = '正在分析影片內容...'
         progress.value = response.data.progress || 25
       } else if (status === 'generating_story') {
-        statusMessage.value = '正在創作感人對白...'
+        statusMessage.value = '正在創作對白...'
         progress.value = response.data.progress || 50
       } else if (status === 'generating_video') {
         statusMessage.value = '正在合成最終影片...'
