@@ -1283,15 +1283,16 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 	}
 
 	// 根據模式設定不同的提示詞風格
-	var modeStyle, modeExamples, modeEmotion string
+	var modeStyle, modeExamples, modeEmotion, modeChapter5Instruction string
 	switch project.StoryMode {
-	case "cute": // 可愛活潑（但不要太做作）
-		modeStyle = "活潑、親人、喜歡撒嬌的小狗"
-		modeEmotion = "開心、興奮、會撒嬌，但不會每一句都刻意裝可愛。偶爾用疊字或語氣詞（嘿嘿、好啦）就好。"
-		modeExamples = fmt.Sprintf(`「%s，你回來了！我有很乖地在門口等你喔。」
-「跟你一起玩的時候，我的尾巴都自己一直搖，停不下來。」
-「%s，可以再抱我一下嗎？被你抱著的時候，我覺得自己好安心。」`,
+	case "cute": // 可愛活潑
+		modeStyle = "活潑、親人、愛撒嬌、對什麼事都充滿好奇心的開心小狗"
+		modeEmotion = "充滿活力、直率開心、黏人，說話像個精力充沛的小朋友，不裝深沉，就是單純地喜歡你。偶爾用語氣詞（嘿嘿、好啦、欸）自然帶出個性。"
+		modeExamples = fmt.Sprintf(`「%s你回來啦！我在門口等好久了，快點快點，我要撲過去！」
+「每次你叫我名字，我的耳朵就自己豎起來，我根本沒辦法不理你。」
+「%s，我今天有超乖，所以可以多給我一個抱抱嗎？就一個就好啦嘿嘿。」`,
 			ownerTitle, ownerTitle)
+		modeChapter5Instruction = "第 5 段要比前幾段更撒嬌，帶著依依不捨但又俏皮的感覺，像是「就算你出門不帶我，我也要偷偷跟去啦」這類句子，讓人忍不住又笑又鼻酸。"
 
 	case "funny": // 幽默風趣
 		modeStyle = "有點小聰明、會吐槽、但心裡很黏人的諧星狗狗"
@@ -1301,6 +1302,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 「欸～那個零食櫃我都有幫你看好喔，只是剛好順便幫自己看一下而已啦。」
 「好啦，我每天都在碎念你，可是你不在家的時候，我其實超想你的。」`,
 			ownerTitle)
+		modeChapter5Instruction = "第 5 段要先用一個小玩笑或自嘲開場，然後突然說出真心話，讓人意想不到卻非常真實，帶點「好啦我就是很愛你」的感覺。"
 
 	default: // warm - 溫馨感人
 		modeStyle = "溫柔、感性、很在意細節的小天使狗狗"
@@ -1309,6 +1311,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 「只要你在，我就覺得家裡好安靜、好安全，我可以放心地睡在你腳邊。」
 「謝謝你一直陪著我，累的時候還是會摸摸我、叫我的名字，我真的好喜歡那個聲音。」`,
 			ownerTitle)
+		modeChapter5Instruction = "第 5 段要特別有感情，帶一點不捨與感謝，可以提到「就算看不到我，我還是在你身邊」這類句子，讓人覺得被好好抱住。"
 	}
 
 	// 構建 prompt - 生成 5 段狗狗對白（加長、加細節）
@@ -1338,7 +1341,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
    - 整段總長度約 40～70 個中文字，不要太短。
 4. 情緒控制：
    - 前 1～4 段可以偏日常、溫暖、搞笑或可愛（依照風格）。
-   - 第 5 段要特別有感情，帶一點不捨與感謝，可以提到「就算看不到我，我還是在你身邊」這類句子。
+   - %s
    - 不要過度灑狗血，不要連發很多「謝謝你」而沒有具體畫面。
 5. 文字風格：
    - 避免太制式的句子（例如「你是我最好的朋友」、「謝謝你的陪伴」可以出現，但不要一整段都在講這種話）。
@@ -1371,6 +1374,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		ownerTitle,
 		strings.Join(allHighlights, "\n"),
 		ownerTitle,
+		modeChapter5Instruction,
 		modeExamples,
 		ownerTitle)
 
@@ -1536,12 +1540,12 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	var modeStyle, modeEmotion, modeExamples, modeNote string
 	switch project.StoryMode {
 	case "cute": // 可愛活潑
-		modeStyle = "活潑、親人、喜歡撒嬌的小狗"
-		modeEmotion = "開心、興奮、黏人，講話會不自覺帶點小撒嬌，但不會每一句都裝可愛。"
-		modeExamples = fmt.Sprintf(`「%s你說那麼多話，我都有聽到喔，我好喜歡你叫我名字的聲音。」
-「%s，我真的好喜歡黏在你身邊睡覺，你走開的時候，我都會偷偷起來找你。」`,
+		modeStyle = "活潑、愛撒嬌、對什麼都很好奇、精力充沛的開心小狗"
+		modeEmotion = "充滿活力、直率開心、超黏人，說話像精力充沛的小孩，不裝深沉，就是直白地說「我好愛你」。偶爾用語氣詞（嘿嘿、欸、好啦）帶出個性，但不要每句都裝可愛。"
+		modeExamples = fmt.Sprintf(`「%s你說那麼多話，我的耳朵都豎起來聽了，你的聲音我一秒就認得出來！」
+「欸%s，你哭的時候我就想爬到你腿上，因為那樣感覺你就不難過了，嘿嘿。」`,
 			ownerTitle, ownerTitle)
-		modeNote = "可以偶爾用一點輕鬆的語氣詞（像是：嘿嘿、好啦），但不要整段都是疊字或太做作。"
+		modeNote = "語氣要活潑直率，像一隻開心黏人的小狗直接說出心裡話，可以用語氣詞帶出個性，但不要整段都是疊字或太做作。結尾要讓人覺得被這隻活潑的小狗抱住了。"
 
 	case "funny": // 幽默風趣
 		modeStyle = "有點小聰明、會吐槽、但超級愛主人的諧星狗狗"
@@ -1564,12 +1568,17 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	}
 
 	// 根據模式設定基調與語氣指令
-	var toneInstruction string
-	if project.StoryMode == "cute" {
-		toneInstruction = "用天真、直率、充滿活力的語氣說話，就像你平常最開心的樣子。不用刻意裝成熟，直接表達你單純的愛，但也依然要真誠。"
-	} else {
-		// Default / Warm
+	var toneInstruction, modeFinalInstruction string
+	switch project.StoryMode {
+	case "cute":
+		toneInstruction = "用天真、直率、充滿活力的語氣說話，就像你平常最開心的樣子。不用裝成熟，直接說出你單純的愛和黏人的感覺。"
+		modeFinalInstruction = fmt.Sprintf("活潑、真誠、像一隻開心撒嬌的小狗對 %s 說的結尾告白", ownerTitle)
+	case "funny":
+		toneInstruction = "語氣幽默、會小小吐槽，但骨子裡超愛對方，說著說著就說出真心話，讓人意外又感動。"
+		modeFinalInstruction = fmt.Sprintf("幽默但真誠、像一隻小聰明狗狗對 %s 說的最後真心告白", ownerTitle)
+	default: // warm
 		toneInstruction = "用成熟、溫柔的大人語氣說話，好像一個長大後的孩子在安慰自己最重要的家人。"
+		modeFinalInstruction = fmt.Sprintf("溫暖、真誠、像一位長大後的孩子對 %s 說的結尾告白", ownerTitle)
 	}
 
 	// 建立 prompt：讓狗狗在結尾說一段「成熟、真心安慰媽媽」的告白
@@ -1616,7 +1625,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	【風格示意（只參考語氣，不要照抄）】：
 	%s
 
-	請根據以上資訊，寫出一段溫暖、真誠、像一位長大後的孩子對 %s 說的結尾告白。只回傳那一段對白文字，不要其他內容。`,
+	請根據以上資訊，寫出一段%s。只回傳那一段對白文字，不要其他內容。`,
 		project.DogName,
 		project.DogBreed,
 		ownerTitle,
@@ -1633,7 +1642,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		modeEmotion,
 		ownerTitle,
 		modeExamples,
-		ownerTitle)
+		modeFinalInstruction)
 
 	log.Printf("Dog response prompt (mode=%s): %s", project.StoryMode, prompt)
 	log.Printf("ＡＬＬ prompt：%s", prompt)
