@@ -1149,6 +1149,17 @@ func processProject(projectID string) {
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
 
+	// 清理原始影片與 frames（保留最終影片和結尾圖片）
+	for _, video := range project.Videos {
+		if video.Path != "" {
+			os.Remove(video.Path)
+		}
+		if video.FramesDir != "" {
+			os.RemoveAll(video.FramesDir)
+		}
+	}
+	log.Printf("🗑️ Cleaned up original videos and frames for project %s", projectID)
+
 	log.Printf("Project %s completed successfully", projectID)
 }
 
