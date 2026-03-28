@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"net/http"
 	"os"
 	"os/exec"
@@ -69,6 +70,13 @@ type VideoInfo struct {
 	Highlights   []Highlight `json:"highlights,omitempty"`
 }
 
+type chunkUploadState struct {
+	TotalChunks    int
+	ReceivedChunks map[int]bool
+	Filename       string
+	ChunkDir       string
+}
+
 type Story struct {
 	Title        string         `json:"title"`
 	Chapters     []StoryChapter `json:"chapters"`
@@ -123,6 +131,10 @@ var (
 	// Phase 2 storage
 	projects      = make(map[string]*Project)
 	projectsMutex sync.RWMutex
+
+	// Chunked upload tracking
+	chunkUploads      = make(map[string]*chunkUploadState)
+	chunkUploadsMutex sync.Mutex
 
 	storagePath   string
 	aiAPIKey      string
@@ -482,6 +494,117 @@ func main() {
 			"uploaded": len(uploadedVideos),
 			"videos":   uploadedVideos,
 		})
+	})
+
+	// POST /api/v2/story/projects/:projectId/video-chunk - 分塊上傳（支援大檔）
+	router.POST("/api/v2/story/projects/:projectId/video-chunk", func(c *gin.Context) {
+		projectID := c.Param("projectId")
+		projectsMutex.RLock()
+		project, exists := projects[projectID]
+		projectsMutex.RUnlock()
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Project not found"})
+			return
+		}
+
+		fileID := c.PostForm("file_id")
+		chunkIndex, _ := strconv.Atoi(c.PostForm("chunk_index"))
+		totalChunks, _ := strconv.Atoi(c.PostForm("total_chunks"))
+		filename := c.PostForm("filename")
+		if fileID == "" || totalChunks == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing chunk metadata"})
+			return
+		}
+
+		chunk, err := c.FormFile("chunk")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No chunk data"})
+			return
+		}
+
+		// 儲存 chunk
+		chunkDir := filepath.Join(storagePath, "chunks", fileID)
+		os.MkdirAll(chunkDir, 0755)
+		chunkPath := filepath.Join(chunkDir, fmt.Sprintf("chunk_%05d", chunkIndex))
+		if err := c.SaveUploadedFile(chunk, chunkPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save chunk"})
+			return
+		}
+
+		// 更新 chunk 狀態
+		chunkUploadsMutex.Lock()
+		if _, ok := chunkUploads[fileID]; !ok {
+			chunkUploads[fileID] = &chunkUploadState{
+				TotalChunks:    totalChunks,
+				ReceivedChunks: map[int]bool{},
+				Filename:       filename,
+				ChunkDir:       chunkDir,
+			}
+		}
+		state := chunkUploads[fileID]
+		state.ReceivedChunks[chunkIndex] = true
+		allReceived := len(state.ReceivedChunks) == totalChunks
+		chunkUploadsMutex.Unlock()
+
+		if !allReceived {
+			c.JSON(http.StatusOK, gin.H{"received": len(state.ReceivedChunks), "total": totalChunks})
+			return
+		}
+
+		// 所有 chunk 到齊，組合檔案
+		ext := strings.ToLower(filepath.Ext(filename))
+		if ext != ".mp4" && ext != ".mov" && ext != ".avi" {
+			os.RemoveAll(chunkDir)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported video format"})
+			return
+		}
+
+		projectDir := filepath.Join(storagePath, "projects", projectID)
+		os.MkdirAll(projectDir, 0755)
+		videoID := uuid.New().String()
+		videoPath := filepath.Join(projectDir, videoID+ext)
+
+		outFile, err := os.Create(videoPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create video file"})
+			return
+		}
+		for i := 0; i < totalChunks; i++ {
+			cp := filepath.Join(chunkDir, fmt.Sprintf("chunk_%05d", i))
+			cf, err := os.Open(cp)
+			if err != nil {
+				outFile.Close()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Missing chunk %d", i)})
+				return
+			}
+			io.Copy(outFile, cf)
+			cf.Close()
+		}
+		outFile.Close()
+
+		// 清理 chunk 暫存
+		os.RemoveAll(chunkDir)
+		chunkUploadsMutex.Lock()
+		delete(chunkUploads, fileID)
+		chunkUploadsMutex.Unlock()
+
+		duration := getVideoDuration(videoPath)
+		videoInfo := VideoInfo{
+			ID:           videoID,
+			OriginalName: filename,
+			Path:         videoPath,
+			Duration:     duration,
+			FramesDir:    filepath.Join(projectDir, videoID+"_frames"),
+			Analyzed:     false,
+		}
+
+		projectsMutex.Lock()
+		project.Videos = append(project.Videos, videoInfo)
+		project.UpdatedAt = time.Now()
+		projectsMutex.Unlock()
+
+		log.Printf("✅ Chunked upload complete: %s (%d chunks)", filename, totalChunks)
+		c.JSON(http.StatusOK, gin.H{"assembled": true, "video": videoInfo})
 	})
 
 	// POST /api/v2/story/projects/:projectId/generate - Generate story

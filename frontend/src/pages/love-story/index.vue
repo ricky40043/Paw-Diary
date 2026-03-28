@@ -314,22 +314,42 @@ const formatFileSize = (bytes) => {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
 }
 
+const CHUNK_SIZE = 20 * 1024 * 1024 // 20MB
+
+const uploadFileChunked = async (pid, file) => {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+  const fileId = Date.now().toString(36) + Math.random().toString(36).substr(2)
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE
+    const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size))
+    const formData = new FormData()
+    formData.append('chunk', chunk)
+    formData.append('file_id', fileId)
+    formData.append('chunk_index', i)
+    formData.append('total_chunks', totalChunks)
+    formData.append('filename', file.name)
+    await axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  }
+}
+
 const uploadVideos = async () => {
   uploading.value = true
-  
   try {
-    // 依序上傳每個影片
     for (const video of videos.value) {
-      if (video) {
+      if (!video) continue
+      if (video.size > 25 * 1024 * 1024) {
+        await uploadFileChunked(projectId.value, video)
+      } else {
         const formData = new FormData()
         formData.append('videos', video)
-        
         await axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
       }
     }
-    
     currentStep.value = 3
   } catch (error) {
     alert('上傳影片失敗：' + (error.response?.data?.error || error.message))
