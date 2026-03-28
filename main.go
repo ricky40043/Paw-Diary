@@ -304,7 +304,7 @@ func main() {
 		}
 
 		// 驗證並設定故事模式，預設為 warm
-		validModes := map[string]bool{"warm": true, "cute": true, "funny": true}
+		validModes := map[string]bool{"warm": true, "cute": true}
 		if req.StoryMode == "" || !validModes[req.StoryMode] {
 			req.StoryMode = "warm"
 		}
@@ -1274,6 +1274,12 @@ func analyzeVideo(project *Project, videoIndex int) error {
 func generateStoryWithAI(project *Project) (*Story, error) {
 	log.Printf("Generating story for project %s with AI (mode: %s)", project.ID, project.StoryMode)
 
+	// 品種預設值
+	dogBreed := project.DogBreed
+	if dogBreed == "" {
+		dogBreed = "狗狗"
+	}
+
 	// 收集所有高光片段的描述
 	allHighlights := []string{}
 	for _, video := range project.Videos {
@@ -1304,16 +1310,6 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 「%s，我今天有超乖，所以可以多給我一個抱抱嗎？就一個就好啦嘿嘿。」`,
 			ownerTitle, ownerTitle)
 		modeChapter5Instruction = "第 5 段要比前幾段更撒嬌，帶著依依不捨但又俏皮的感覺，像是「就算你出門不帶我，我也要偷偷跟去啦」這類句子，讓人忍不住又笑又鼻酸。"
-
-	case "funny": // 幽默風趣
-		modeStyle = "有點小聰明、會吐槽、但心裡很黏人的諧星狗狗"
-		modeEmotion = "幽默、自嘲、搞笑，會開玩笑吐槽%s，但不是真的在抱怨，語氣要帶著喜歡和依賴。"
-		modeEmotion = fmt.Sprintf(modeEmotion, ownerTitle)
-		modeExamples = fmt.Sprintf(`「%s，你知道嗎？我覺得沙發那一邊比較軟，所以我先幫你躺好試試看。」
-「欸～那個零食櫃我都有幫你看好喔，只是剛好順便幫自己看一下而已啦。」
-「好啦，我每天都在碎念你，可是你不在家的時候，我其實超想你的。」`,
-			ownerTitle)
-		modeChapter5Instruction = "第 5 段要先用一個小玩笑或自嘲開場，然後突然說出真心話，讓人意想不到卻非常真實，帶點「好啦我就是很愛你」的感覺。"
 
 	default: // warm - 溫馨感人
 		modeStyle = "溫柔、感性、很在意細節的小天使狗狗"
@@ -1378,7 +1374,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 - 只回傳 JSON，不要任何註解、解說、markdown 或額外符號。
 - narration 必須是完整中文句子，符合上述長度與情感要求。`,
 		project.DogName,
-		project.DogBreed,
+		dogBreed,
 		ownerTitle,
 		modeStyle,
 		modeEmotion,
@@ -1541,6 +1537,12 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d: %s", i+1, chapter.Narration))
 	}
 
+	// 品種預設值
+	dogBreed := project.DogBreed
+	if dogBreed == "" {
+		dogBreed = "狗狗"
+	}
+
 	// 根據關係設定稱呼
 	ownerTitle := project.OwnerRelationship
 	if ownerTitle == "" {
@@ -1557,15 +1559,6 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 「欸%s，你哭的時候我就想爬到你腿上，因為那樣感覺你就不難過了，嘿嘿。」`,
 			ownerTitle, ownerTitle)
 		modeNote = "語氣要活潑直率，像一隻開心黏人的小狗直接說出心裡話，可以用語氣詞帶出個性，但不要整段都是疊字或太做作。結尾要讓人覺得被這隻活潑的小狗抱住了。"
-
-	case "funny": // 幽默風趣
-		modeStyle = "有點小聰明、會吐槽、但超級愛主人的諧星狗狗"
-		modeEmotion = "幽默、自嘲、會小小吐槽一下%s，但整體是溫暖、依賴的感覺。"
-		modeEmotion = fmt.Sprintf(modeEmotion, ownerTitle)
-		modeExamples = fmt.Sprintf(`「%s，你講那麼感人，我耳朵都要熱起來了啦，不過我真的超想你的。」
-「欸～%s，你哭的時候鼻子皺皺的，其實有點好笑…但我最喜歡你笑給我看的樣子。」`,
-			ownerTitle, ownerTitle)
-		modeNote = "可以有一點點玩笑和吐槽，但結尾要真心，讓人感覺到是溫柔的狗狗。"
 
 	default: // warm - 溫馨感人
 		// 感人模式：像小孩很認真在安慰最重要的大人
@@ -1584,9 +1577,6 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	case "cute":
 		toneInstruction = "用天真、直率、充滿活力的語氣說話，就像你平常最開心的樣子。不用裝成熟，直接說出你單純的愛和黏人的感覺。"
 		modeFinalInstruction = fmt.Sprintf("活潑、真誠、像一隻開心撒嬌的小狗對 %s 說的結尾告白", ownerTitle)
-	case "funny":
-		toneInstruction = "語氣幽默、會小小吐槽，但骨子裡超愛對方，說著說著就說出真心話，讓人意外又感動。"
-		modeFinalInstruction = fmt.Sprintf("幽默但真誠、像一隻小聰明狗狗對 %s 說的最後真心告白", ownerTitle)
 	default: // warm
 		toneInstruction = "用成熟、溫柔的大人語氣說話，好像一個長大後的孩子在安慰自己最重要的家人。"
 		modeFinalInstruction = fmt.Sprintf("溫暖、真誠、像一位長大後的孩子對 %s 說的結尾告白", ownerTitle)
@@ -1638,7 +1628,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 
 	請根據以上資訊，寫出一段%s。只回傳那一段對白文字，不要其他內容。`,
 		project.DogName,
-		project.DogBreed,
+		dogBreed,
 		ownerTitle,
 		modeStyle,
 		ownerTitle,
