@@ -1950,6 +1950,23 @@ func compositeVideo(project *Project) error {
 		subtitledVideoPath = videoWithEndingPath
 	}
 
+	// Step 3.5: 加入片頭字卡
+	log.Printf("Step 3.5: Adding title card")
+	titleCardPath := filepath.Join(outputDir, "title_card.mp4")
+	videoWithTitlePath := filepath.Join(outputDir, "video_with_title.mp4")
+	if err := createTitleCard(project, titleCardPath); err != nil {
+		log.Printf("Warning: Failed to create title card: %v, skipping", err)
+	} else if err := prependTitleCard(titleCardPath, subtitledVideoPath, videoWithTitlePath); err != nil {
+		log.Printf("Warning: Failed to prepend title card: %v, skipping", err)
+		os.Remove(titleCardPath)
+	} else {
+		if subtitledVideoPath != videoWithEndingPath {
+			os.Remove(subtitledVideoPath)
+		}
+		os.Remove(titleCardPath)
+		subtitledVideoPath = videoWithTitlePath
+	}
+
 	// Step 4: 加入背景音樂（100% 音量）
 	log.Printf("Step 4: Adding background music")
 	finalVideoPath := filepath.Join(outputDir, "final.mp4")
@@ -2778,51 +2795,37 @@ func compressImage(inputPath string, maxWidth, maxHeight int) ([]byte, error) {
 func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	log.Printf("Adding subtitles to video for project %s", project.ID)
 
-	// 建立 SRT 字幕檔案
 	outputDir := filepath.Dir(inputVideo)
-	srtPath := filepath.Join(outputDir, "subtitles.srt")
+	assPath := filepath.Join(outputDir, "subtitles.ass")
 
-	f, err := os.Create(srtPath)
-	if err != nil {
-		return fmt.Errorf("failed to create subtitle file: %v", err)
-	}
-	defer f.Close()
+	// 生成 ASS 格式字幕（支援淡入淡出效果）
+	var sb strings.Builder
+	sb.WriteString("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n")
+	sb.WriteString("[V4+ Styles]\n")
+	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
+	sb.WriteString("Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1,1,2,10,10,30,1\n\n")
+	sb.WriteString("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
-	// 生成 SRT 格式字幕
 	currentTime := 0.0
-	subtitleIndex := 1
-
-	// 添加前 5 個影片的字幕（狗狗的對白）
 	for _, chapter := range project.Story.Chapters {
 		startTime := currentTime
 		endTime := currentTime + chapter.Duration
-
-		// SRT 格式
-		fmt.Fprintf(f, "%d\n", subtitleIndex)
-		fmt.Fprintf(f, "%s --> %s\n", formatSRTTime(startTime), formatSRTTime(endTime))
-		fmt.Fprintf(f, "%s\n\n", chapter.Narration)
-
+		sb.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,{\\fad(500,500)}%s\n",
+			formatASSTime(startTime), formatASSTime(endTime), chapter.Narration))
 		currentTime = endTime
-		subtitleIndex++
 	}
 
-	// 結尾部分的字幕已由 addEndingImage 直接燒錄到影片中，此處不再添加 SRT 字幕
-	// 這樣可以避免字幕重複或樣式衝突，並符合用戶需求
+	if err := os.WriteFile(assPath, []byte(sb.String()), 0644); err != nil {
+		return fmt.Errorf("failed to create subtitle file: %v", err)
+	}
+	defer os.Remove(assPath)
 
-	// 使用 FFmpeg 將字幕燒錄到影片中
-	// 字幕樣式：白色文字、黑色邊框、底部居中
-	// 字體大小改為 16，適中顯示
+	fontPath := getFontPath()
 	subtitleStyle := "FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=30"
 
-	log.Printf("📝 Adding subtitles with style: %s", subtitleStyle)
-	log.Printf("📄 Subtitle file: %s", srtPath)
-
-	// 複製字幕檔案到沒有空格的臨時路徑（避免 FFmpeg filter 路徑解析問題）
-	// 在 Linux/Alpine 下，subtitles filter 會處理特殊路徑的問題
-	fontPath := getFontPath()
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
-		"-vf", fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", srtPath, subtitleStyle, fontPath),
+		"-vf", fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", assPath, subtitleStyle, fontPath),
 		"-c:a", "copy",
 		"-y",
 		outputVideo,
@@ -2833,7 +2836,71 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 		return fmt.Errorf("ffmpeg subtitle error: %v, output: %s", err, string(output))
 	}
 
-	log.Printf("✅ Added subtitles for project %s (including ending)", project.ID)
+	log.Printf("✅ Added subtitles for project %s", project.ID)
+	return nil
+}
+
+func formatASSTime(seconds float64) string {
+	h := int(seconds) / 3600
+	m := (int(seconds) % 3600) / 60
+	s := int(seconds) % 60
+	cs := int((seconds - float64(int(seconds))) * 100)
+	return fmt.Sprintf("%d:%02d:%02d.%02d", h, m, s, cs)
+}
+
+// createTitleCard 建立片頭字卡（狗狗名字淡入淡出）
+func createTitleCard(project *Project, outputPath string) error {
+	const duration = 3.0
+	const fadeDuration = 0.8
+
+	outputDir := filepath.Dir(outputPath)
+	textFilePath := filepath.Join(outputDir, "title_text.txt")
+	if err := os.WriteFile(textFilePath, []byte(project.DogName+" 的回憶錄"), 0644); err != nil {
+		return fmt.Errorf("failed to write title text: %v", err)
+	}
+	defer os.Remove(textFilePath)
+
+	fontPath := getFontPath()
+	videoFilter := fmt.Sprintf(
+		"drawtext=fontfile='%s':textfile='%s':fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black:shadowx=3:shadowy=3,"+
+			"fade=t=in:st=0:d=%.1f,fade=t=out:st=%.1f:d=%.1f",
+		fontPath, textFilePath, fadeDuration, duration-fadeDuration, fadeDuration,
+	)
+
+	cmd := exec.Command("ffmpeg",
+		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:size=1920x1080:rate=25:duration=%.1f", duration),
+		"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+		"-vf", videoFilter,
+		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
+		"-c:a", "aac", "-b:a", "128k",
+		"-t", fmt.Sprintf("%.1f", duration),
+		"-y", outputPath,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create title card: %v, output: %s", err, string(output))
+	}
+	log.Printf("✅ Created title card: %s 的回憶錄", project.DogName)
+	return nil
+}
+
+// prependTitleCard 將片頭字卡接在主影片前面
+func prependTitleCard(titlePath, mainPath, outputPath string) error {
+	cmd := exec.Command("ffmpeg",
+		"-i", titlePath,
+		"-i", mainPath,
+		"-filter_complex", "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
+		"-map", "[v]", "-map", "[a]",
+		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
+		"-c:a", "aac", "-b:a", "128k",
+		"-y", outputPath,
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to prepend title card: %v, output: %s", err, string(output))
+	}
 	return nil
 }
 
