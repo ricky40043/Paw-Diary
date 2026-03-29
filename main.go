@@ -2926,7 +2926,7 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	sb.WriteString("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n")
 	sb.WriteString("[V4+ Styles]\n")
 	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	sb.WriteString("Style: Default,Arial,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,1,1,2,10,10,30,1\n\n")
+	sb.WriteString("Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,50,1\n\n")
 	sb.WriteString("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
 	currentTime := 0.0
@@ -2944,7 +2944,7 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	defer os.Remove(assPath)
 
 	fontPath := getFontPath()
-	subtitleStyle := "FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=30"
+	subtitleStyle := "FontSize=40,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=50"
 
 	cmd := exec.Command("ffmpeg",
 		"-i", inputVideo,
@@ -2971,29 +2971,33 @@ func formatASSTime(seconds float64) string {
 	return fmt.Sprintf("%d:%02d:%02d.%02d", h, m, s, cs)
 }
 
-// createTitleCard 建立片頭字卡（狗狗名字淡入淡出）
+// createTitleCard 建立片頭字卡（用 subtitles filter，與字幕同一套字型機制）
 func createTitleCard(project *Project, outputPath string) error {
 	const duration = 3.0
-	const fadeDuration = 0.8
-
 	outputDir := filepath.Dir(outputPath)
-	textFilePath := filepath.Join(outputDir, "title_text.txt")
-	if err := os.WriteFile(textFilePath, []byte(project.DogName+" 的回憶錄"), 0644); err != nil {
-		return fmt.Errorf("failed to write title text: %v", err)
+
+	// 用 ASS + alignment=5（置中）產生片頭標題，\fad 淡入淡出
+	assPath := filepath.Join(outputDir, "title_card.ass")
+	titleText := project.DogName + " 的回憶錄"
+	assContent := fmt.Sprintf(
+		"[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n"+
+			"[V4+ Styles]\n"+
+			"Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"+
+			"Style: Default,Arial,72,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,3,0,1,2,1,5,10,10,0,1\n\n"+
+			"[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"+
+			"Dialogue: 0,0:00:00.00,0:00:03.00,Default,,0,0,0,,{\\fad(800,800)}%s\n",
+		titleText,
+	)
+	if err := os.WriteFile(assPath, []byte(assContent), 0644); err != nil {
+		return fmt.Errorf("failed to write title ass: %v", err)
 	}
-	defer os.Remove(textFilePath)
+	defer os.Remove(assPath)
 
 	fontPath := getFontPath()
-	videoFilter := fmt.Sprintf(
-		"drawtext=fontfile='%s':textfile='%s':fontsize=72:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black:shadowx=3:shadowy=3,"+
-			"fade=t=in:st=0:d=%.1f,fade=t=out:st=%.1f:d=%.1f",
-		fontPath, textFilePath, fadeDuration, duration-fadeDuration, fadeDuration,
-	)
-
 	cmd := exec.Command("ffmpeg",
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:size=1920x1080:rate=25:duration=%.1f", duration),
 		"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-		"-vf", videoFilter,
+		"-vf", fmt.Sprintf("subtitles='%s':force_style='FontName=%s'", assPath, fontPath),
 		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
 		"-c:a", "aac", "-b:a", "128k",
 		"-t", fmt.Sprintf("%.1f", duration),
@@ -3004,7 +3008,7 @@ func createTitleCard(project *Project, outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create title card: %v, output: %s", err, string(output))
 	}
-	log.Printf("✅ Created title card: %s 的回憶錄", project.DogName)
+	log.Printf("✅ Created title card: %s", titleText)
 	return nil
 }
 
