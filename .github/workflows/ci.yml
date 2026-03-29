@@ -94,7 +94,7 @@ jobs:
             --set-env-vars "AI_API_ENDPOINT=https://openrouter.ai/api/v1/chat/completions" \
             --set-env-vars "AI_MODEL_NAME=google/gemini-2.0-flash-001" \
             --set-env-vars "AI_VISION_MODEL=google/gemini-2.0-flash-001" \
-            --set-env-vars "AI_TEXT_MODEL=openai/gpt-5-nano" \
+            --set-env-vars "AI_TEXT_MODEL=openai/gpt-4o-mini" \
             --set-env-vars "ANALYSIS_DURATION_SECONDS=15" \
             --set-env-vars "ANALYSIS_INTERVAL=2" \
             --set-env-vars "SEGMENT_DURATION_SECONDS=3" \
