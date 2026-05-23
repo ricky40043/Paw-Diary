@@ -73,41 +73,51 @@
         </form>
       </div>
 
-      <!-- Step 2: 上傳 5 個影片 -->
+      <!-- Step 2: 上傳影片 -->
       <div v-if="currentStep === 2" class="step-card">
-        <h2>步驟 2：上傳 5 個影片</h2>
-        <p class="hint">每個影片會被剪輯成約 15 秒，請選擇與狗狗互動的溫馨片段</p>
-        
-        <div class="video-uploads">
-          <div v-for="i in 5" :key="i" class="video-upload-box">
-            <div v-if="!videos[i-1]" class="upload-placeholder" @click="selectVideo(i-1)">
-              <div class="icon">🎬</div>
-              <p>影片 {{ i }}</p>
-              <p class="small">點擊選擇</p>
-            </div>
-            <div v-else class="video-selected">
-              <div class="icon">✅</div>
-              <p class="name">{{ videos[i-1].name }}</p>
-              <p class="size">{{ formatFileSize(videos[i-1].size) }}</p>
-              <button type="button" @click="removeVideo(i-1)" class="btn-remove">移除</button>
-            </div>
-          </div>
+        <h2>步驟 2：上傳影片</h2>
+        <p class="hint">選擇 1～5 個與狗狗互動的溫馨片段，每個影片會被剪輯成約 15 秒</p>
+
+        <!-- 選擇區：每次點擊加入一支，手機相容 -->
+        <div
+          class="video-drop-zone"
+          :class="{ disabled: videoCount >= 5 }"
+          @click="videoCount < 5 && $refs.videoInput.click()"
+        >
+          <div class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
+          <p>{{ videoCount >= 5 ? '已達上限 5 個' : `點擊新增影片 (${videoCount}/5)` }}</p>
+          <p class="small">支援 MP4 / MOV / AVI，可多次點擊累加</p>
         </div>
-        <input 
-          ref="videoInput" 
-          type="file" 
-          accept="video/mp4,video/mov,video/avi" 
-          @change="handleVideoSelect" 
+        <input
+          ref="videoInput"
+          type="file"
+          accept="video/*"
+          @change="handleVideoSelect"
           style="display: none"
         />
-        
-        <p class="upload-hint">已選擇 {{ videoCount }}/5 個影片</p>
-        
+
+        <!-- 已選影片清單 -->
+        <div v-if="videoCount > 0" class="video-list">
+          <div v-for="(video, index) in videos" :key="index" class="video-list-item">
+            <span class="video-num">{{ index + 1 }}</span>
+            <div class="video-info">
+              <p class="name">{{ video.name }}</p>
+              <p class="size">{{ formatFileSize(video.size) }}</p>
+            </div>
+            <button type="button" @click="removeVideo(index)" class="btn-remove">✕</button>
+          </div>
+        </div>
+
+        <p class="upload-hint" :class="{ warn: videoCount > 5 }">
+          已選擇 {{ videoCount }} / 5 個影片
+          <span v-if="videoCount > 5">（超過上限，請移除多餘的）</span>
+        </p>
+
         <div class="actions">
           <button @click="currentStep = 1" class="btn-secondary">上一步</button>
           <button
             @click="uploadVideos"
-            :disabled="videoCount < 5 || uploading"
+            :disabled="videoCount < 1 || videoCount > 5 || uploading"
             class="btn-primary"
           >
             {{ uploading ? `上傳中 ${uploadProgress}%` : '上傳影片' }}
@@ -232,11 +242,10 @@ const ownerRelationship = ref('媽媽')
 const relations = ['爸爸', '媽媽', '哥哥', '姊姊', '弟弟', '妹妹', '主人']
 
 // Step 3: 影片
-const videos = ref([null, null, null, null, null])
-const selectedVideoIndex = ref(-1)
+const videos = ref([])
 const videoInput = ref(null)
 const uploading = ref(false)
-const uploadProgress = ref(0) // 0-100，上傳整體進度
+const uploadProgress = ref(0)
 
 // Step 4: 圖片
 const endingImage = ref(null)
@@ -259,20 +268,11 @@ const canProceedStep1 = computed(() => {
   return dogName.value.trim().length > 0 && ownerRelationship.value !== '' && storyMode.value
 })
 
-const videoCount = computed(() => {
-  return videos.value.filter(v => v).length
-})
+const videoCount = computed(() => videos.value.length)
 
 const canSubmitMessage = computed(() => {
   return ownerMessage.value.trim().length >= 10
 })
-
-// 方法
-const goToStep2 = () => {
-  if (storyMode.value) {
-    currentStep.value = 2
-  }
-}
 
 const createProject = async () => {
   if (!canProceedStep1.value) return
@@ -293,21 +293,19 @@ const createProject = async () => {
   }
 }
 
-const selectVideo = (index) => {
-  selectedVideoIndex.value = index
-  videoInput.value.click()
-}
-
 const handleVideoSelect = (event) => {
   const file = event.target.files[0]
-  if (file && selectedVideoIndex.value >= 0) {
-    videos.value[selectedVideoIndex.value] = file
+  if (!file) return
+  // 去重（依檔名+size）
+  const alreadyAdded = videos.value.some(f => f.name === file.name && f.size === file.size)
+  if (!alreadyAdded && videos.value.length < 5) {
+    videos.value.push(file)
   }
-  event.target.value = ''
+  event.target.value = '' // 清空讓同一支影片可以重新選
 }
 
 const removeVideo = (index) => {
-  videos.value[index] = null
+  videos.value.splice(index, 1)
 }
 
 const formatFileSize = (bytes) => {
@@ -349,7 +347,7 @@ const uploadVideos = async () => {
   uploadProgress.value = 0
 
   try {
-    const fileList = videos.value.filter(v => v)
+    const fileList = videos.value
     // 計算總 chunk 數以追蹤整體進度
     let totalChunks = 0
     let doneChunks = 0
@@ -479,7 +477,7 @@ const reset = () => {
   ownerRelationship.value = '媽媽'
   projectId.value = ''
   ownerMessage.value = ''
-  videos.value = [null, null, null, null, null]
+  videos.value = []
   endingImage.value = null
   imagePreview.value = ''
   result.value = null
@@ -701,32 +699,25 @@ h2 {
 }
 
 /* 影片上傳 */
-.video-uploads {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.video-upload-box {
-  aspect-ratio: 1;
+.video-drop-zone {
   border: 3px dashed #667eea;
   border-radius: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 2.5rem 1rem;
+  text-align: center;
   cursor: pointer;
   transition: all 0.3s;
+  margin-bottom: 1.2rem;
 }
 
-.video-upload-box:hover {
+.video-drop-zone:hover:not(.disabled) {
   background: #f8f9ff;
   border-color: #764ba2;
 }
 
-.upload-placeholder, .video-selected {
-  text-align: center;
-  padding: 1rem;
+.video-drop-zone.disabled {
+  border-color: #ccc;
+  cursor: default;
+  opacity: 0.6;
 }
 
 .icon {
@@ -734,28 +725,72 @@ h2 {
   margin-bottom: 0.5rem;
 }
 
-.video-selected .name {
-  font-weight: 600;
-  color: #333;
-  margin: 0.5rem 0;
-  font-size: 0.85rem;
-  word-break: break-all;
-}
-
-.video-selected .size {
-  color: #666;
-  font-size: 0.75rem;
-}
-
 .small {
   color: #999;
   font-size: 0.8rem;
+}
+
+/* 已選影片清單 */
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.video-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: #f8f9ff;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+}
+
+.video-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  background: #667eea;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.video-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.video-info .name {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.video-info .size {
+  color: #888;
+  font-size: 0.75rem;
+  margin: 0;
 }
 
 .upload-hint {
   text-align: center;
   color: #666;
   margin-bottom: 1.5rem;
+}
+
+.upload-hint.warn {
+  color: #f44336;
+  font-weight: 600;
 }
 
 /* 圖片上傳 */

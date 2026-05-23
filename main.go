@@ -2376,7 +2376,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	// 先把段落中的 "\n\n" 正規化成單一 "\n"，避免間距過大
 	dogText = strings.ReplaceAll(dogText, "\n\n", "\n")
 	// 為了避免文字太長被左右切掉，先做簡單斷行（大約每行 22 個字）
-	dogText = wrapTextForFFmpeg(dogText, 22)
+	dogText = wrapTextForFFmpeg(dogText, 12)
 
 	// 獲取輸入影片時長和原始解析度
 	inputDuration := getVideoDuration(inputVideo)
@@ -2399,8 +2399,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	fontFile := getFontPath()
 	log.Printf("🔤 Using font: %s", fontFile)
 
-	// 字體大小改為 24，適中顯示
-	fontSize := 40
+	fontSize := 80
 	log.Printf("📏 Font size: %d", fontSize)
 
 	// 使用 FFmpeg 創建結尾圖片影片
@@ -2839,6 +2838,25 @@ func escapeFFmpegText(text string) string {
 	return text
 }
 
+// wrapTextForASS 將長文字按最大字數換行，使用 ASS 的 \N 硬換行符
+func wrapTextForASS(text string, maxChars int) string {
+	if maxChars <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	var result strings.Builder
+	lineLen := 0
+	for i, r := range runes {
+		if lineLen >= maxChars && i > 0 {
+			result.WriteString(`\N`)
+			lineLen = 0
+		}
+		result.WriteRune(r)
+		lineLen++
+	}
+	return result.String()
+}
+
 // wrapTextForFFmpeg 將長文字按最大字數換行，避免在 drawtext 中被左右切掉
 // maxChars 是「每行最多的字數」（以 rune 計算，適合中英文摻雜的情況）
 func wrapTextForFFmpeg(text string, maxChars int) string {
@@ -3003,15 +3021,17 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	sb.WriteString("[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\n\n")
 	sb.WriteString("[V4+ Styles]\n")
 	sb.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	sb.WriteString("Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,50,1\n\n")
+	sb.WriteString("Style: Default,Arial,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,10,10,60,1\n\n")
 	sb.WriteString("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
 
 	currentTime := 0.0
 	for _, chapter := range project.Story.Chapters {
 		startTime := currentTime
 		endTime := currentTime + chapter.Duration
+		// 每行最多 18 個字，避免在螢幕邊緣被截掉
+		wrapped := wrapTextForASS(chapter.Narration, 18)
 		sb.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Default,,0,0,0,,{\\fad(500,500)}%s\n",
-			formatASSTime(startTime), formatASSTime(endTime), chapter.Narration))
+			formatASSTime(startTime), formatASSTime(endTime), wrapped))
 		currentTime = endTime
 	}
 
@@ -3021,7 +3041,7 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	defer os.Remove(assPath)
 
 	fontPath := getFontPath()
-	subtitleStyle := "FontSize=40,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=50"
+	subtitleStyle := "FontSize=80,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,MarginV=60"
 
 	subArgs := vaapiGlobalArgs()
 	subArgs = append(subArgs,
