@@ -769,11 +769,12 @@ func processJob(jobID string) {
 var useVAAPI = os.Getenv("ENABLE_VAAPI") == "true"
 
 // vaapiVF appends hwupload to a software filter chain for VAAPI encoding.
+// format=nv12 converts to VAAPI's preferred input format before upload.
 func vaapiVF(vf string) string {
 	if !useVAAPI {
 		return vf
 	}
-	return vf + ",hwupload=extra_hw_frames=64,format=vaapi"
+	return vf + ",format=nv12,hwupload=extra_hw_frames=64,format=vaapi"
 }
 
 // h264Args returns video encoder args: h264_vaapi (GPU) or libx264 (CPU).
@@ -2461,7 +2462,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	concatFC := "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]"
 	concatVMap := "[outv]"
 	if useVAAPI {
-		concatFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+		concatFC += ";[outv]format=nv12,hwupload=extra_hw_frames=64,format=vaapi[vout]"
 		concatVMap = "[vout]"
 	}
 	concatArgs := vaapiGlobalArgs()
@@ -2486,7 +2487,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 		naFC := "[0:v][1:v]concat=n=2:v=1:a=0[outv]"
 		naVMap := "[outv]"
 		if useVAAPI {
-			naFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+			naFC += ";[outv]format=nv12,hwupload=extra_hw_frames=64,format=vaapi[vout]"
 			naVMap = "[vout]"
 		}
 		naArgs := vaapiGlobalArgs()
@@ -2546,7 +2547,7 @@ func compositeVideoOnly(project *Project, outputPath string) error {
 			"-c:a", "aac",
 		)
 		if useVAAPI {
-			cutArgs = append(cutArgs, "-vf", "hwupload=extra_hw_frames=64,format=vaapi")
+			cutArgs = append(cutArgs, "-vf", "format=nv12,hwupload=extra_hw_frames=64,format=vaapi")
 		}
 		cutArgs = append(cutArgs, h264Args("")...)
 		cutArgs = append(cutArgs, "-y", segmentPath)
@@ -3118,7 +3119,7 @@ func prependTitleCard(titlePath, mainPath, outputPath string) error {
 	prependFC := "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
 	prependVMap := "[v]"
 	if useVAAPI {
-		prependFC += ";[v]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+		prependFC += ";[v]format=nv12,hwupload=extra_hw_frames=64,format=vaapi[vout]"
 		prependVMap = "[vout]"
 	}
 	prependArgs := vaapiGlobalArgs()
