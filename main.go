@@ -803,6 +803,22 @@ func pixFmtArgs() []string {
 	return []string{"-pix_fmt", "yuv420p"}
 }
 
+// vaapiGlobalArgs returns -init_hw_device and -filter_hw_device flags required
+// for hwupload to work in filter chains. Must be prepended before -i flags.
+func vaapiGlobalArgs() []string {
+	if !useVAAPI {
+		return nil
+	}
+	device := os.Getenv("VAAPI_DEVICE")
+	if device == "" {
+		device = "/dev/dri/renderD128"
+	}
+	return []string{
+		"-init_hw_device", "vaapi=va:" + device,
+		"-filter_hw_device", "va",
+	}
+}
+
 func extractFrames(job *Job) error {
 	os.MkdirAll(job.FramesDir, 0755)
 
@@ -2217,13 +2233,14 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 
 		log.Printf("🎨 Chapter %d filter: %s", chapter.Index, videoFilter)
 
-		segArgs := []string{
+		segArgs := vaapiGlobalArgs()
+		segArgs = append(segArgs,
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 			"-to", fmt.Sprintf("%.2f", chapter.EndTime),
 			"-vf", vaapiVF(videoFilter),
 			"-an",
-		}
+		)
 		segArgs = append(segArgs, h264Args("fast")...)
 		segArgs = append(segArgs, pixFmtArgs()...)
 		segArgs = append(segArgs, "-y", segmentPath)
@@ -2407,7 +2424,8 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 		height/3,
 		endingDuration-0.5,
 	)
-	endingArgs := []string{
+	endingArgs := vaapiGlobalArgs()
+	endingArgs = append(endingArgs,
 		"-loop", "1",
 		"-i", project.EndingImage,
 		"-f", "lavfi",
@@ -2420,7 +2438,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 		"-color_primaries", "bt709",
 		"-color_trc", "bt709",
 		"-shortest",
-	}
+	)
 	endingArgs = append(endingArgs, h264Args("")...)
 	endingArgs = append(endingArgs, pixFmtArgs()...)
 	endingArgs = append(endingArgs, "-y", endingVideoPath)
@@ -2447,14 +2465,15 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 		concatFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
 		concatVMap = "[vout]"
 	}
-	concatArgs := []string{
+	concatArgs := vaapiGlobalArgs()
+	concatArgs = append(concatArgs,
 		"-i", inputVideo,
 		"-i", endingVideoPath,
 		"-filter_complex", concatFC,
 		"-map", concatVMap,
 		"-map", "[outa]",
 		"-c:a", "aac",
-	}
+	)
 	concatArgs = append(concatArgs, h264Args("fast")...)
 	concatArgs = append(concatArgs, "-y", outputVideo)
 	concatCmd := exec.Command("ffmpeg", concatArgs...)
@@ -2471,7 +2490,8 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 			naFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
 			naVMap = "[vout]"
 		}
-		naArgs := []string{"-i", inputVideo, "-i", endingVideoPath, "-filter_complex", naFC, "-map", naVMap}
+		naArgs := vaapiGlobalArgs()
+		naArgs = append(naArgs, "-i", inputVideo, "-i", endingVideoPath, "-filter_complex", naFC, "-map", naVMap)
 		naArgs = append(naArgs, h264Args("fast")...)
 		naArgs = append(naArgs, "-y", outputVideo)
 		concatCmdNoAudio := exec.Command("ffmpeg", naArgs...)
@@ -2519,11 +2539,15 @@ func compositeVideoOnly(project *Project, outputPath string) error {
 
 		// 剪出這個片段
 		segmentPath := filepath.Join(outputDir, fmt.Sprintf("segment_%d.mp4", chapter.Index))
-		cutArgs := []string{
+		cutArgs := vaapiGlobalArgs()
+		cutArgs = append(cutArgs,
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 			"-to", fmt.Sprintf("%.2f", chapter.EndTime),
 			"-c:a", "aac",
+		)
+		if useVAAPI {
+			cutArgs = append(cutArgs, "-vf", "hwupload=extra_hw_frames=64,format=vaapi")
 		}
 		cutArgs = append(cutArgs, h264Args("")...)
 		cutArgs = append(cutArgs, "-y", segmentPath)
@@ -2621,13 +2645,14 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 			filterComplex := fmt.Sprintf("setpts=%.4f*PTS,fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				1.0/speedFactor, fadeDuration, segmentDuration-fadeDuration, fadeDuration)
 
-			speedArgs := []string{
+			speedArgs := vaapiGlobalArgs()
+			speedArgs = append(speedArgs,
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 				"-t", fmt.Sprintf("%.2f", segmentDuration),
 				"-filter:v", vaapiVF(filterComplex),
 				"-an",
-			}
+			)
 			speedArgs = append(speedArgs, h264Args("fast")...)
 			speedArgs = append(speedArgs, "-y", segmentPath+"_video.mp4")
 			cmd := exec.Command("ffmpeg", speedArgs...)
@@ -2668,13 +2693,14 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 			fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				fadeDuration, segmentDuration-fadeDuration, fadeDuration)
 
-			fadeArgs := []string{
+			fadeArgs := vaapiGlobalArgs()
+			fadeArgs = append(fadeArgs,
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 				"-t", fmt.Sprintf("%.2f", segmentDuration),
 				"-vf", vaapiVF(fadeFilter),
 				"-an",
-			}
+			)
 			fadeArgs = append(fadeArgs, h264Args("fast")...)
 			fadeArgs = append(fadeArgs, "-y", segmentPath)
 			cmd := exec.Command("ffmpeg", fadeArgs...)
@@ -2997,11 +3023,12 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	fontPath := getFontPath()
 	subtitleStyle := "FontSize=40,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=50"
 
-	subArgs := []string{
+	subArgs := vaapiGlobalArgs()
+	subArgs = append(subArgs,
 		"-i", inputVideo,
 		"-vf", vaapiVF(fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", assPath, subtitleStyle, fontPath)),
 		"-c:a", "copy",
-	}
+	)
 	subArgs = append(subArgs, h264Args("fast")...)
 	subArgs = append(subArgs, "-y", outputVideo)
 	cmd := exec.Command("ffmpeg", subArgs...)
@@ -3046,13 +3073,14 @@ func createTitleCard(project *Project, outputPath string) error {
 	defer os.Remove(assPath)
 
 	fontPath := getFontPath()
-	titleArgs := []string{
+	titleArgs := vaapiGlobalArgs()
+	titleArgs = append(titleArgs,
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:size=1920x1080:rate=25:duration=%.1f", duration),
 		"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
 		"-vf", vaapiVF(fmt.Sprintf("subtitles='%s':force_style='FontName=%s'", assPath, fontPath)),
 		"-c:a", "aac", "-b:a", "128k",
 		"-t", fmt.Sprintf("%.1f", duration),
-	}
+	)
 	titleArgs = append(titleArgs, h264ArgsWithCRF("fast", "23")...)
 	titleArgs = append(titleArgs, "-y", outputPath)
 	cmd := exec.Command("ffmpeg", titleArgs...)
@@ -3073,13 +3101,14 @@ func prependTitleCard(titlePath, mainPath, outputPath string) error {
 		prependFC += ";[v]hwupload=extra_hw_frames=64,format=vaapi[vout]"
 		prependVMap = "[vout]"
 	}
-	prependArgs := []string{
+	prependArgs := vaapiGlobalArgs()
+	prependArgs = append(prependArgs,
 		"-i", titlePath,
 		"-i", mainPath,
 		"-filter_complex", prependFC,
 		"-map", prependVMap, "-map", "[a]",
 		"-c:a", "aac", "-b:a", "128k",
-	}
+	)
 	prependArgs = append(prependArgs, h264ArgsWithCRF("fast", "23")...)
 	prependArgs = append(prependArgs, "-y", outputPath)
 	cmd := exec.Command("ffmpeg", prependArgs...)
