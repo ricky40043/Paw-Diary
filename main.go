@@ -2414,7 +2414,7 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 			"x=(w-text_w)/2:y=h-%d:"+
 			"box=1:boxcolor=black@0.6:boxborderw=10,"+
 			"fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,"+
-			"format=yuv420p,colorspace=bt709:iall=bt601-6-625:fast=1",
+			"format=yuv420p",
 		width, height,
 		width, height,
 		fontFile,
@@ -2432,10 +2432,6 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 		"-vf", vaapiVF(endingVF),
 		"-t", fmt.Sprintf("%.2f", endingDuration),
 		"-c:a", "aac",
-		"-color_range", "tv",
-		"-colorspace", "bt709",
-		"-color_primaries", "bt709",
-		"-color_trc", "bt709",
 		"-shortest",
 	)
 	endingArgs = append(endingArgs, h264Args("")...)
@@ -3297,8 +3293,9 @@ func getFontPath() string {
 		"/Library/Fonts/Arial Unicode.ttf",
 	}
 
-	// Linux (Cloud Run / Alpine)
+	// Linux (Alpine Docker: font-noto-cjk 安裝路徑)
 	linuxFonts := []string{
+		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/noto/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/TTF/NotoSansCJK-Regular.ttc",

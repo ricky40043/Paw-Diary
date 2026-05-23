@@ -78,20 +78,21 @@
         <h2>步驟 2：上傳影片</h2>
         <p class="hint">選擇 1～5 個與狗狗互動的溫馨片段，每個影片會被剪輯成約 15 秒</p>
 
-        <!-- 選擇區：每次點擊加入一支，手機相容 -->
+        <!-- 選擇區 -->
         <div
           class="video-drop-zone"
           :class="{ disabled: videoCount >= 5 }"
           @click="videoCount < 5 && $refs.videoInput.click()"
         >
           <div class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
-          <p>{{ videoCount >= 5 ? '已達上限 5 個' : `點擊新增影片 (${videoCount}/5)` }}</p>
-          <p class="small">支援 MP4 / MOV / AVI，可多次點擊累加</p>
+          <p>{{ videoCount >= 5 ? '已達上限 5 個' : `點擊選擇影片 (${videoCount}/5)` }}</p>
+          <p class="small">可一次多選，最多 5 個</p>
         </div>
         <input
           ref="videoInput"
           type="file"
           accept="video/*"
+          multiple
           @change="handleVideoSelect"
           style="display: none"
         />
@@ -294,14 +295,16 @@ const createProject = async () => {
 }
 
 const handleVideoSelect = (event) => {
-  const file = event.target.files[0]
-  if (!file) return
-  // 去重（依檔名+size）
-  const alreadyAdded = videos.value.some(f => f.name === file.name && f.size === file.size)
-  if (!alreadyAdded && videos.value.length < 5) {
-    videos.value.push(file)
+  const newFiles = Array.from(event.target.files)
+  const seen = new Set(videos.value.map(f => f.name + f.size))
+  for (const f of newFiles) {
+    const key = f.name + f.size
+    if (!seen.has(key) && videos.value.length < 5) {
+      seen.add(key)
+      videos.value.push(f)
+    }
   }
-  event.target.value = '' // 清空讓同一支影片可以重新選
+  event.target.value = ''
 }
 
 const removeVideo = (index) => {
