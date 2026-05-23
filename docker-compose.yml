@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "19400:8080"
+    env_file:
+      - .env
+    environment:
+      - ENABLE_VAAPI=true
+      - VAAPI_DEVICE=/dev/dri/renderD128
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "44"    # video
+      - "990"   # render
+    volumes:
+      - ./storage:/app/storage
+      - ./assets_bgm:/app/assets_bgm

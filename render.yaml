@@ -39,6 +39,12 @@ services:
       - key: AI_API_KEY
         sync: false  # Must be set manually in Render Dashboard (secret)
       - key: AI_API_ENDPOINT
-        value: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+        value: https://openrouter.ai/api/v1/chat/completions
+      - key: AI_MODEL_NAME
+        value: google/gemini-2.0-flash-001
+      - key: AI_VISION_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: AI_TEXT_MODEL
+        value: openai/gpt-5-nano
 
     healthCheckPath: /api/health

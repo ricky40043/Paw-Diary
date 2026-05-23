@@ -105,12 +105,12 @@
         
         <div class="actions">
           <button @click="currentStep = 1" class="btn-secondary">上一步</button>
-          <button 
-            @click="uploadVideos" 
+          <button
+            @click="uploadVideos"
             :disabled="videoCount < 5 || uploading"
             class="btn-primary"
           >
-            {{ uploading ? '上傳中...' : '上傳影片' }}
+            {{ uploading ? `上傳中 ${uploadProgress}%` : '上傳影片' }}
           </button>
         </div>
       </div>
@@ -236,6 +236,7 @@ const videos = ref([null, null, null, null, null])
 const selectedVideoIndex = ref(-1)
 const videoInput = ref(null)
 const uploading = ref(false)
+const uploadProgress = ref(0) // 0-100，上傳整體進度
 
 // Step 4: 圖片
 const endingImage = ref(null)
@@ -316,45 +317,72 @@ const formatFileSize = (bytes) => {
 
 const CHUNK_SIZE = 20 * 1024 * 1024 // 20MB
 
-const uploadFileChunked = async (pid, file) => {
+const uploadFileChunked = async (pid, file, onChunkDone) => {
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
   const fileId = Date.now().toString(36) + Math.random().toString(36).substr(2)
 
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE
-    const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size))
-    const formData = new FormData()
-    formData.append('chunk', chunk)
-    formData.append('file_id', fileId)
-    formData.append('chunk_index', i)
-    formData.append('total_chunks', totalChunks)
-    formData.append('filename', file.name)
-    await axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+  // 同時送最多 3 個 chunk，加快上傳速度
+  const PARALLEL = 3
+  for (let i = 0; i < totalChunks; i += PARALLEL) {
+    const batch = []
+    for (let j = i; j < Math.min(i + PARALLEL, totalChunks); j++) {
+      const start = j * CHUNK_SIZE
+      const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size))
+      const formData = new FormData()
+      formData.append('chunk', chunk)
+      formData.append('file_id', fileId)
+      formData.append('chunk_index', j)
+      formData.append('total_chunks', totalChunks)
+      formData.append('filename', file.name)
+      batch.push(
+        axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        }).then(() => onChunkDone && onChunkDone())
+      )
+    }
+    await Promise.all(batch)
   }
 }
 
 const uploadVideos = async () => {
   uploading.value = true
+  uploadProgress.value = 0
+
   try {
-    for (const video of videos.value) {
-      if (!video) continue
+    const fileList = videos.value.filter(v => v)
+    // 計算總 chunk 數以追蹤整體進度
+    let totalChunks = 0
+    let doneChunks = 0
+    for (const video of fileList) {
+      totalChunks += video.size > 25 * 1024 * 1024
+        ? Math.ceil(video.size / CHUNK_SIZE)
+        : 1
+    }
+
+    const onChunkDone = () => {
+      doneChunks++
+      uploadProgress.value = Math.round((doneChunks / totalChunks) * 100)
+    }
+
+    // 所有影片同時並行上傳
+    await Promise.all(fileList.map(video => {
       if (video.size > 25 * 1024 * 1024) {
-        await uploadFileChunked(projectId.value, video)
+        return uploadFileChunked(projectId.value, video, onChunkDone)
       } else {
         const formData = new FormData()
         formData.append('videos', video)
-        await axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
+        return axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
-        })
+        }).then(() => onChunkDone())
       }
-    }
+    }))
+
     currentStep.value = 3
   } catch (error) {
     alert('上傳影片失敗：' + (error.response?.data?.error || error.message))
   } finally {
     uploading.value = false
+    uploadProgress.value = 0
   }
 }
 

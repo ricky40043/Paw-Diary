@@ -36,15 +36,23 @@ RUN npm run build
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final runtime image
+# Use Ubuntu 24.04 for up-to-date Intel VAAPI driver (xe kernel driver support)
 # -----------------------------------------------------------------------------
-FROM alpine:3.19
+FROM ubuntu:26.04
 
-# Install FFmpeg, FFprobe, and CA certificates
-RUN apk add --no-cache \
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install FFmpeg, Intel VAAPI driver (non-free, supports xe/Arrow Lake), and fonts
+RUN apt-get update && apt-get install -y \
     ffmpeg \
     ca-certificates \
     tzdata \
-    font-noto-cjk
+    wget \
+    fonts-noto-cjk \
+    intel-media-va-driver-non-free \
+    libva-drm2 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set timezone
 ENV TZ=Asia/Taipei
@@ -72,7 +80,7 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/health || exit 1
+    CMD curl -sf http://localhost:8080/api/health || exit 1
 
 # Run the application
 CMD ["./main"]

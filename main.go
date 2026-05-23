@@ -760,6 +760,49 @@ func processJob(jobID string) {
 	log.Printf("Job %s completed successfully", jobID)
 }
 
+// ============================================================================
+// FFmpeg Hardware Acceleration (VAAPI)
+// ============================================================================
+
+// useVAAPI enables Intel VAAPI hardware encoding via ENABLE_VAAPI=true env var.
+// Requires /dev/dri to be mounted in the container.
+var useVAAPI = os.Getenv("ENABLE_VAAPI") == "true"
+
+// vaapiVF appends hwupload to a software filter chain for VAAPI encoding.
+func vaapiVF(vf string) string {
+	if !useVAAPI {
+		return vf
+	}
+	return vf + ",hwupload=extra_hw_frames=64,format=vaapi"
+}
+
+// h264Args returns video encoder args: h264_vaapi (GPU) or libx264 (CPU).
+func h264Args(preset string) []string {
+	if useVAAPI {
+		return []string{"-c:v", "h264_vaapi"}
+	}
+	if preset != "" {
+		return []string{"-c:v", "libx264", "-preset", preset}
+	}
+	return []string{"-c:v", "libx264"}
+}
+
+// h264ArgsWithCRF returns video encoder args with CRF quality (CPU only).
+func h264ArgsWithCRF(preset, crf string) []string {
+	if useVAAPI {
+		return []string{"-c:v", "h264_vaapi"}
+	}
+	return []string{"-c:v", "libx264", "-preset", preset, "-crf", crf}
+}
+
+// pixFmtArgs returns pix_fmt yuv420p for software encode, empty for VAAPI.
+func pixFmtArgs() []string {
+	if useVAAPI {
+		return nil
+	}
+	return []string{"-pix_fmt", "yuv420p"}
+}
+
 func extractFrames(job *Job) error {
 	os.MkdirAll(job.FramesDir, 0755)
 
@@ -1156,6 +1199,11 @@ func markJobFailed(jobID, errorMsg string) {
 
 func processProject(projectID string) {
 	start := time.Now()
+
+	if aiAPIKey == "" {
+		markProjectFailed(projectID, "AI_API_KEY 未設定，請在 Render Dashboard 的 Environment 頁面填入 API Key")
+		return
+	}
 
 	projectsMutex.Lock()
 	project := projects[projectID]
@@ -2169,18 +2217,17 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 
 		log.Printf("🎨 Chapter %d filter: %s", chapter.Index, videoFilter)
 
-		cmd := exec.Command("ffmpeg",
+		segArgs := []string{
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 			"-to", fmt.Sprintf("%.2f", chapter.EndTime),
-			"-vf", videoFilter,
-			"-an", // 移除音訊
-			"-c:v", "libx264",
-			"-preset", "fast",
-			"-pix_fmt", "yuv420p",
-			"-y",
-			segmentPath,
-		)
+			"-vf", vaapiVF(videoFilter),
+			"-an",
+		}
+		segArgs = append(segArgs, h264Args("fast")...)
+		segArgs = append(segArgs, pixFmtArgs()...)
+		segArgs = append(segArgs, "-y", segmentPath)
+		cmd := exec.Command("ffmpeg", segArgs...)
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("❌ Failed to create segment %d: %v, output: %s", chapter.Index, err, string(output))
@@ -2344,39 +2391,40 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	// 2. 添加靜音音軌 (anullsrc)
 	// 3. 縮放並添加文字
 	// 注意：使用 input 的寬高，並確保顏色空間與主影片一致
-	endingCmd := exec.Command("ffmpeg",
+	endingVF := fmt.Sprintf(
+		"scale=%d:%d:force_original_aspect_ratio=decrease,"+
+			"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
+			"drawtext=fontfile='%s':text='%s':fontsize=%d:fontcolor=white:"+
+			"x=(w-text_w)/2:y=h-%d:"+
+			"box=1:boxcolor=black@0.6:boxborderw=10,"+
+			"fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,"+
+			"format=yuv420p,colorspace=bt709:iall=bt601-6-625:fast=1",
+		width, height,
+		width, height,
+		fontFile,
+		escapeFFmpegText(dogText),
+		fontSize,
+		height/3,
+		endingDuration-0.5,
+	)
+	endingArgs := []string{
 		"-loop", "1",
 		"-i", project.EndingImage,
 		"-f", "lavfi",
 		"-i", "anullsrc=r=44100:cl=stereo",
-		"-vf", fmt.Sprintf(
-			"scale=%d:%d:force_original_aspect_ratio=decrease,"+
-				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
-				"drawtext=fontfile='%s':text='%s':fontsize=%d:fontcolor=white:"+
-				"x=(w-text_w)/2:y=h-%d:"+
-				"box=1:boxcolor=black@0.6:boxborderw=10,"+
-				"fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,"+
-				"format=yuv420p,colorspace=bt709:iall=bt601-6-625:fast=1",
-			width, height,
-			width, height,
-			fontFile,
-			escapeFFmpegText(dogText),
-			fontSize,
-			height/3, // y position: leave roughly bottom third for text
-			endingDuration-0.5,
-		),
+		"-vf", vaapiVF(endingVF),
 		"-t", fmt.Sprintf("%.2f", endingDuration),
-		"-c:v", "libx264",
 		"-c:a", "aac",
-		"-pix_fmt", "yuv420p",
 		"-color_range", "tv",
 		"-colorspace", "bt709",
 		"-color_primaries", "bt709",
 		"-color_trc", "bt709",
 		"-shortest",
-		"-y",
-		endingVideoPath,
-	)
+	}
+	endingArgs = append(endingArgs, h264Args("")...)
+	endingArgs = append(endingArgs, pixFmtArgs()...)
+	endingArgs = append(endingArgs, "-y", endingVideoPath)
+	endingCmd := exec.Command("ffmpeg", endingArgs...)
 
 	endingOutput, err := endingCmd.CombinedOutput()
 	if err != nil {
@@ -2393,18 +2441,23 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 
 	// 使用 concat filter 合併影片
 	// [0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]
-	concatCmd := exec.Command("ffmpeg",
+	concatFC := "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]"
+	concatVMap := "[outv]"
+	if useVAAPI {
+		concatFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+		concatVMap = "[vout]"
+	}
+	concatArgs := []string{
 		"-i", inputVideo,
 		"-i", endingVideoPath,
-		"-filter_complex", "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[outv][outa]",
-		"-map", "[outv]",
+		"-filter_complex", concatFC,
+		"-map", concatVMap,
 		"-map", "[outa]",
-		"-c:v", "libx264",
 		"-c:a", "aac",
-		"-preset", "fast",
-		"-y",
-		outputVideo,
-	)
+	}
+	concatArgs = append(concatArgs, h264Args("fast")...)
+	concatArgs = append(concatArgs, "-y", outputVideo)
+	concatCmd := exec.Command("ffmpeg", concatArgs...)
 
 	concatOutput, err := concatCmd.CombinedOutput()
 	if err != nil {
@@ -2412,16 +2465,16 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 
 		// 嘗試不帶音訊的 concat (如果輸入影片沒有音訊)
 		log.Printf("Trying concat without audio...")
-		concatCmdNoAudio := exec.Command("ffmpeg",
-			"-i", inputVideo,
-			"-i", endingVideoPath,
-			"-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[outv]",
-			"-map", "[outv]",
-			"-c:v", "libx264",
-			"-preset", "fast",
-			"-y",
-			outputVideo,
-		)
+		naFC := "[0:v][1:v]concat=n=2:v=1:a=0[outv]"
+		naVMap := "[outv]"
+		if useVAAPI {
+			naFC += ";[outv]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+			naVMap = "[vout]"
+		}
+		naArgs := []string{"-i", inputVideo, "-i", endingVideoPath, "-filter_complex", naFC, "-map", naVMap}
+		naArgs = append(naArgs, h264Args("fast")...)
+		naArgs = append(naArgs, "-y", outputVideo)
+		concatCmdNoAudio := exec.Command("ffmpeg", naArgs...)
 		if out, err := concatCmdNoAudio.CombinedOutput(); err != nil {
 			log.Printf("Concat no-audio failed: %v, output: %s", err, string(out))
 			return fmt.Errorf("failed to concat: %v", err)
@@ -2466,15 +2519,15 @@ func compositeVideoOnly(project *Project, outputPath string) error {
 
 		// 剪出這個片段
 		segmentPath := filepath.Join(outputDir, fmt.Sprintf("segment_%d.mp4", chapter.Index))
-		cmd := exec.Command("ffmpeg",
+		cutArgs := []string{
 			"-i", videoPath,
 			"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 			"-to", fmt.Sprintf("%.2f", chapter.EndTime),
-			"-c:v", "libx264",
 			"-c:a", "aac",
-			"-y",
-			segmentPath,
-		)
+		}
+		cutArgs = append(cutArgs, h264Args("")...)
+		cutArgs = append(cutArgs, "-y", segmentPath)
+		cmd := exec.Command("ffmpeg", cutArgs...)
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("Failed to create segment %d: %v, output: %s", chapter.Index, err, string(output))
@@ -2568,17 +2621,16 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 			filterComplex := fmt.Sprintf("setpts=%.4f*PTS,fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				1.0/speedFactor, fadeDuration, segmentDuration-fadeDuration, fadeDuration)
 
-			cmd := exec.Command("ffmpeg",
+			speedArgs := []string{
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 				"-t", fmt.Sprintf("%.2f", segmentDuration),
-				"-filter:v", filterComplex,
-				"-an", // 移除原音訊
-				"-c:v", "libx264",
-				"-preset", "fast",
-				"-y",
-				segmentPath+"_video.mp4",
-			)
+				"-filter:v", vaapiVF(filterComplex),
+				"-an",
+			}
+			speedArgs = append(speedArgs, h264Args("fast")...)
+			speedArgs = append(speedArgs, "-y", segmentPath+"_video.mp4")
+			cmd := exec.Command("ffmpeg", speedArgs...)
 
 			if output, err := cmd.CombinedOutput(); err != nil {
 				log.Printf("Failed to process video for chapter %d: %v, output: %s", i+1, err, string(output))
@@ -2616,17 +2668,16 @@ func compositeVideoWithAudio(project *Project, outputPath string) error {
 			fadeFilter := fmt.Sprintf("fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 				fadeDuration, segmentDuration-fadeDuration, fadeDuration)
 
-			cmd := exec.Command("ffmpeg",
+			fadeArgs := []string{
 				"-i", videoPath,
 				"-ss", fmt.Sprintf("%.2f", chapter.StartTime),
 				"-t", fmt.Sprintf("%.2f", segmentDuration),
-				"-vf", fadeFilter, // 加入淡入淡出
-				"-an", // 移除原音訊
-				"-c:v", "libx264",
-				"-preset", "fast",
-				"-y",
-				segmentPath,
-			)
+				"-vf", vaapiVF(fadeFilter),
+				"-an",
+			}
+			fadeArgs = append(fadeArgs, h264Args("fast")...)
+			fadeArgs = append(fadeArgs, "-y", segmentPath)
+			cmd := exec.Command("ffmpeg", fadeArgs...)
 
 			if output, err := cmd.CombinedOutput(); err != nil {
 				log.Printf("Failed to create segment %d: %v, output: %s", i+1, err, string(output))
@@ -2946,13 +2997,14 @@ func addSubtitles(project *Project, inputVideo, outputVideo string) error {
 	fontPath := getFontPath()
 	subtitleStyle := "FontSize=40,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=50"
 
-	cmd := exec.Command("ffmpeg",
+	subArgs := []string{
 		"-i", inputVideo,
-		"-vf", fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", assPath, subtitleStyle, fontPath),
+		"-vf", vaapiVF(fmt.Sprintf("subtitles='%s':force_style='%s,FontName=%s'", assPath, subtitleStyle, fontPath)),
 		"-c:a", "copy",
-		"-y",
-		outputVideo,
-	)
+	}
+	subArgs = append(subArgs, h264Args("fast")...)
+	subArgs = append(subArgs, "-y", outputVideo)
+	cmd := exec.Command("ffmpeg", subArgs...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -2994,15 +3046,16 @@ func createTitleCard(project *Project, outputPath string) error {
 	defer os.Remove(assPath)
 
 	fontPath := getFontPath()
-	cmd := exec.Command("ffmpeg",
+	titleArgs := []string{
 		"-f", "lavfi", "-i", fmt.Sprintf("color=c=black:size=1920x1080:rate=25:duration=%.1f", duration),
 		"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-		"-vf", fmt.Sprintf("subtitles='%s':force_style='FontName=%s'", assPath, fontPath),
-		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
+		"-vf", vaapiVF(fmt.Sprintf("subtitles='%s':force_style='FontName=%s'", assPath, fontPath)),
 		"-c:a", "aac", "-b:a", "128k",
 		"-t", fmt.Sprintf("%.1f", duration),
-		"-y", outputPath,
-	)
+	}
+	titleArgs = append(titleArgs, h264ArgsWithCRF("fast", "23")...)
+	titleArgs = append(titleArgs, "-y", outputPath)
+	cmd := exec.Command("ffmpeg", titleArgs...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -3014,15 +3067,22 @@ func createTitleCard(project *Project, outputPath string) error {
 
 // prependTitleCard 將片頭字卡接在主影片前面
 func prependTitleCard(titlePath, mainPath, outputPath string) error {
-	cmd := exec.Command("ffmpeg",
+	prependFC := "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
+	prependVMap := "[v]"
+	if useVAAPI {
+		prependFC += ";[v]hwupload=extra_hw_frames=64,format=vaapi[vout]"
+		prependVMap = "[vout]"
+	}
+	prependArgs := []string{
 		"-i", titlePath,
 		"-i", mainPath,
-		"-filter_complex", "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
-		"-map", "[v]", "-map", "[a]",
-		"-c:v", "libx264", "-preset", "fast", "-crf", "23",
+		"-filter_complex", prependFC,
+		"-map", prependVMap, "-map", "[a]",
 		"-c:a", "aac", "-b:a", "128k",
-		"-y", outputPath,
-	)
+	}
+	prependArgs = append(prependArgs, h264ArgsWithCRF("fast", "23")...)
+	prependArgs = append(prependArgs, "-y", outputPath)
+	cmd := exec.Command("ffmpeg", prependArgs...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
