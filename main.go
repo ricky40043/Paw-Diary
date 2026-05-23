@@ -2220,11 +2220,15 @@ func createVideoWithTransitionsAndTTS(project *Project, outputPath string) error
 		// 計算淡入淡出
 		fadeDuration := 0.5
 		videoDuration := chapter.EndTime - chapter.StartTime
+		// 防止影片太短導致 fade 時間為負
+		if videoDuration < fadeDuration*3 {
+			fadeDuration = videoDuration / 4
+		}
 
-		// 組合濾鏡：縮放到 16:9 + 淡入淡出
-		// scale 保持寬高比，pad 填充黑邊到目標尺寸
+		// 組合濾鏡：先 format=yuv420p 確保 iPhone HEVC 10-bit 相容，再縮放 + 淡入淡出
 		videoFilter := fmt.Sprintf(
-			"scale=%d:%d:force_original_aspect_ratio=decrease,"+
+			"format=yuv420p,"+
+				"scale=%d:%d:force_original_aspect_ratio=decrease,"+
 				"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
 				"fade=t=in:st=0:d=%.2f,fade=t=out:st=%.2f:d=%.2f",
 			targetWidth, targetHeight,

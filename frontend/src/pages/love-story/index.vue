@@ -81,18 +81,23 @@
         <!-- 選擇區 -->
         <div
           class="video-drop-zone"
-          :class="{ disabled: videoCount >= 5 }"
-          @click="videoCount < 5 && $refs.videoInput.click()"
+          :class="{ disabled: videoCount >= 5 || addingVideo }"
+          @click="videoCount < 5 && !addingVideo && $refs.videoInput.click()"
         >
-          <div class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
-          <p>{{ videoCount >= 5 ? '已達上限 5 個' : `點擊選擇影片 (${videoCount}/5)` }}</p>
-          <p class="small">可一次多選，最多 5 個</p>
+          <div v-if="addingVideo" class="mini-spinner"></div>
+          <div v-else class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
+          <p>
+            <span v-if="addingVideo">正在讀取影片，請稍候...</span>
+            <span v-else-if="videoCount >= 5">已達上限 5 個</span>
+            <span v-else-if="videoCount === 0">點擊選擇影片</span>
+            <span v-else>已選 {{ videoCount }} 個，點擊繼續新增</span>
+          </p>
+          <p class="small">最多 5 個，每次選一個慢慢加</p>
         </div>
         <input
           ref="videoInput"
           type="file"
           accept="video/*"
-          multiple
           @change="handleVideoSelect"
           style="display: none"
         />
@@ -247,6 +252,7 @@ const videos = ref([])
 const videoInput = ref(null)
 const uploading = ref(false)
 const uploadProgress = ref(0)
+const addingVideo = ref(false)
 
 // Step 4: 圖片
 const endingImage = ref(null)
@@ -295,16 +301,19 @@ const createProject = async () => {
 }
 
 const handleVideoSelect = (event) => {
-  const newFiles = Array.from(event.target.files)
-  const seen = new Set(videos.value.map(f => f.name + f.size))
-  for (const f of newFiles) {
-    const key = f.name + f.size
-    if (!seen.has(key) && videos.value.length < 5) {
-      seen.add(key)
-      videos.value.push(f)
+  addingVideo.value = true
+  // nextTick 讓 spinner 先顯示出來，再做同步處理
+  setTimeout(() => {
+    const file = event.target.files[0]
+    if (file) {
+      const alreadyAdded = videos.value.some(f => f.name === file.name && f.size === file.size)
+      if (!alreadyAdded && videos.value.length < 5) {
+        videos.value.push(file)
+      }
     }
-  }
-  event.target.value = ''
+    event.target.value = ''
+    addingVideo.value = false
+  }, 50)
 }
 
 const removeVideo = (index) => {
@@ -721,6 +730,16 @@ h2 {
   border-color: #ccc;
   cursor: default;
   opacity: 0.6;
+}
+
+.mini-spinner {
+  width: 32px;
+  height: 32px;
+  border: 4px solid #e0e0e0;
+  border-top: 4px solid #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 0.5rem auto;
 }
 
 .icon {
