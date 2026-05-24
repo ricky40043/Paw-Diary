@@ -305,13 +305,14 @@ const createProject = async () => {
 
 const handleVideoSelect = (event) => {
   addingVideo.value = true
-  // nextTick 讓 spinner 先顯示出來，再做同步處理
   setTimeout(() => {
-    const file = event.target.files[0]
-    if (file) {
-      const alreadyAdded = videos.value.some(f => f.name === file.name && f.size === file.size)
-      if (!alreadyAdded && videos.value.length < 5) {
-        videos.value.push(file)
+    const newFiles = Array.from(event.target.files || [])
+    const seen = new Set(videos.value.map(f => f.name + f.size))
+    for (const f of newFiles) {
+      const key = f.name + f.size
+      if (!seen.has(key) && videos.value.length < 5) {
+        seen.add(key)
+        videos.value.push(f)
       }
     }
     event.target.value = ''

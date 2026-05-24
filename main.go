@@ -2376,12 +2376,10 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	outputDir := filepath.Dir(inputVideo)
 	endingDuration := 15.0 // 結尾 15 秒
 
-	// 準備狗狗回應文字（直接是狗狗視角的話，不加名字前綴）
+	// 準備狗狗回應文字
 	dogText := project.Story.DogResponse
-	// 先把段落中的 "\n\n" 正規化成單一 "\n"，避免間距過大
 	dogText = strings.ReplaceAll(dogText, "\n\n", "\n")
-	// 為了避免文字太長被左右切掉，先做簡單斷行（大約每行 22 個字）
-	dogText = wrapTextForFFmpeg(dogText, 12)
+	dogText = strings.TrimSpace(dogText)
 
 	// 獲取輸入影片時長和原始解析度
 	inputDuration := getVideoDuration(inputVideo)
@@ -2404,30 +2402,68 @@ func addEndingImage(project *Project, inputVideo, outputVideo string) error {
 	fontFile := getFontPath()
 	log.Printf("🔤 Using font: %s", fontFile)
 
-	fontSize := 80
-	log.Printf("📏 Font size: %d", fontSize)
+	fontSize := 52
+	lineHeight := fontSize + 12
+	log.Printf("📏 Font size: %d, line height: %d", fontSize, lineHeight)
 
-	// 使用 FFmpeg 創建結尾圖片影片
-	// 1. 循環圖片 10 秒
-	// 2. 添加靜音音軌 (anullsrc)
-	// 3. 縮放並添加文字
-	// 注意：使用 input 的寬高，並確保顏色空間與主影片一致
-	endingVF := fmt.Sprintf(
+	// 將文字分行（每行最多 20 字），每行用獨立的 drawtext filter 避免亂碼問題
+	rawLines := strings.Split(dogText, "\n")
+	var textLines []string
+	for _, part := range rawLines {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		runes := []rune(part)
+		const maxCharsPerLine = 20
+		for start := 0; start < len(runes); start += maxCharsPerLine {
+			end := start + maxCharsPerLine
+			if end > len(runes) {
+				end = len(runes)
+			}
+			textLines = append(textLines, string(runes[start:end]))
+		}
+	}
+	if len(textLines) == 0 {
+		textLines = []string{""}
+	}
+	// 限制最多 6 行，避免超出畫面
+	if len(textLines) > 6 {
+		textLines = textLines[:6]
+	}
+
+	totalTextHeight := len(textLines) * lineHeight
+	// 文字區塊起始 Y：置於畫面下方 1/3 處，並加 margin
+	startY := height - totalTextHeight - 80
+	if startY < height/2 {
+		startY = height / 2
+	}
+
+	// 基礎濾鏡：縮放 + padding
+	baseVF := fmt.Sprintf(
 		"scale=%d:%d:force_original_aspect_ratio=decrease,"+
-			"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black,"+
-			"drawtext=fontfile='%s':text='%s':fontsize=%d:fontcolor=white:"+
-			"x=(w-text_w)/2:y=h-%d:"+
-			"box=1:boxcolor=black@0.6:boxborderw=10,"+
-			"fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,"+
-			"format=yuv420p",
-		width, height,
-		width, height,
-		fontFile,
-		escapeFFmpegText(dogText),
-		fontSize,
-		height/3,
-		endingDuration-0.5,
+			"pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black",
+		width, height, width, height,
 	)
+
+	// 為每一行建立獨立的 drawtext 濾鏡，避免 \n 亂碼問題
+	var dtParts []string
+	for i, line := range textLines {
+		y := startY + i*lineHeight
+		dt := fmt.Sprintf(
+			"drawtext=fontfile='%s':text='%s':fontsize=%d:fontcolor=white:"+
+				"x=(w-text_w)/2:y=%d:"+
+				"box=1:boxcolor=black@0.6:boxborderw=8",
+			fontFile,
+			escapeFFmpegText(line),
+			fontSize,
+			y,
+		)
+		dtParts = append(dtParts, dt)
+	}
+
+	fadePart := fmt.Sprintf("fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,format=yuv420p", endingDuration-0.5)
+	endingVF := baseVF + "," + strings.Join(dtParts, ",") + "," + fadePart
 	endingArgs := vaapiGlobalArgs()
 	endingArgs = append(endingArgs,
 		"-loop", "1",
