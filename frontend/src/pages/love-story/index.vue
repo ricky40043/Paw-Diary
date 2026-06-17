@@ -13,6 +13,21 @@
 
       <!-- Step 1: 狗狗資訊與風格 -->
       <div v-if="currentStep === 1" class="step-card">
+        <!-- 我做過的影片（存在本機，永久連結，滑掉也找得到） -->
+        <div v-if="videoHistory.length" class="history-box">
+          <h3>📼 我做過的影片</h3>
+          <div v-for="item in videoHistory" :key="item.id" class="history-item">
+            <div class="history-info">
+              <span class="history-name">{{ item.name }}的回憶錄</span>
+              <span class="history-date">{{ formatHistoryDate(item.ts) }}</span>
+            </div>
+            <a :href="item.url" target="_blank" rel="noopener" class="history-open">▶ 開啟</a>
+            <a :href="item.url" :download="`${item.name}回憶錄.mp4`" class="history-open dl">⬇</a>
+            <button type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
+          </div>
+          <p class="history-hint">這些連結存在你的手機，滑掉或關掉都還能回來開／下載</p>
+        </div>
+
         <h2>步驟 1：狗狗資訊</h2>
         <form @submit.prevent="createProject">
           <div class="form-group">
@@ -294,6 +309,33 @@ const result = ref(null)
 let pollTimer = null
 
 // ---------------------------------------------------------------------------
+// 「我的影片」歷史：完成的影片永久連結存在本機。影片檔在伺服器的 docker volume，
+// 重新部署也不會消失，所以這個直接連結滑掉/關瀏覽器/重新部署後都還能開。
+// ---------------------------------------------------------------------------
+const HISTORY_KEY = 'pawDiaryHistory'
+const videoHistory = ref([])
+
+const loadHistory = () => {
+  try { videoHistory.value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch (e) { videoHistory.value = [] }
+}
+const addToHistory = (id, name, relativeUrl) => {
+  if (!id || !relativeUrl) return
+  const absUrl = relativeUrl.startsWith('http') ? relativeUrl : (window.location.origin + relativeUrl)
+  const list = videoHistory.value.filter(v => v.id !== id)
+  list.unshift({ id, name: name || '毛孩', url: absUrl, ts: Date.now() })
+  videoHistory.value = list.slice(0, 30)
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(videoHistory.value)) } catch (e) {}
+}
+const removeFromHistory = (id) => {
+  videoHistory.value = videoHistory.value.filter(v => v.id !== id)
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(videoHistory.value)) } catch (e) {}
+}
+const formatHistoryDate = (ts) => {
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// ---------------------------------------------------------------------------
 // localStorage 狀態保存：手機不小心滑掉 / 重新整理也不會全部消失
 // （已上傳的影片存在伺服器，用 id 追蹤；File 本體無法保存，但不需要重傳）
 // ---------------------------------------------------------------------------
@@ -364,7 +406,7 @@ const restore = async () => {
   }
 }
 
-onMounted(restore)
+onMounted(() => { loadHistory(); restore() })
 
 // 任一關鍵狀態變動就保存（videos 不放進 watch，改在上傳完成/移除時明確 persist，
 // 避免上傳進度每跳一格就寫一次 localStorage 造成手機卡頓）
@@ -635,6 +677,8 @@ const pollProgress = () => {
         clearInterval(pollTimer); pollTimer = null
         progress.value = 100
         result.value = response.data
+        // 存進「我的影片」永久清單（直接連結，滑掉/重新部署都還能開）
+        addToHistory(projectId.value, dogName.value, response.data.final_video_url)
         clearPersist()
         setTimeout(() => { currentStep.value = 6 }, 500)
         return
@@ -1025,6 +1069,64 @@ h2 {
 }
 
 .btn-retry:hover { background: #f57c00; }
+
+/* 我做過的影片 */
+.history-box {
+  background: #f4f6ff;
+  border: 1px solid #e0e6ff;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+.history-box h3 {
+  color: #667eea;
+  font-size: 1rem;
+  margin: 0 0 0.6rem;
+}
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid #e6eaff;
+}
+.history-item:first-of-type { border-top: none; }
+.history-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.history-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-date { color: #999; font-size: 0.75rem; }
+.history-open {
+  flex-shrink: 0;
+  background: #667eea;
+  color: #fff;
+  text-decoration: none;
+  padding: 0.35rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.history-open.dl { background: #5a6acf; padding: 0.35rem 0.55rem; }
+.history-del {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #bbb;
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+}
+.history-hint { color: #888; font-size: 0.75rem; margin: 0.5rem 0 0; }
 
 .upload-hint {
   text-align: center;

@@ -1548,18 +1548,29 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		dogBreed = "狗狗"
 	}
 
-	// 收集所有高光片段的描述
-	allHighlights := []string{}
-	for _, video := range project.Videos {
-		for _, highlight := range video.Highlights {
-			allHighlights = append(allHighlights, fmt.Sprintf("影片《%s》: %s (情緒：%s)",
-				video.OriginalName, highlight.Caption, highlight.Emotion))
+	// 為「每一支影片」建立一行描述（用 AI 視覺分析的 caption/emotion）。
+	// 對白會「一支影片一段、依序對應」，且必須緊扣該片描述，避免文字與畫面對不上。
+	videoDescriptions := []string{}
+	for i, video := range project.Videos {
+		caption := "與狗狗相處的溫馨畫面"
+		emotion := ""
+		if len(video.Highlights) > 0 {
+			if video.Highlights[0].Caption != "" {
+				caption = video.Highlights[0].Caption
+			}
+			emotion = video.Highlights[0].Emotion
+		}
+		if emotion != "" {
+			videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d：%s（狗狗情緒：%s）", i, caption, emotion))
+		} else {
+			videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d：%s", i, caption))
 		}
 	}
 
-	if len(allHighlights) == 0 {
-		return nil, fmt.Errorf("no highlights found in any video")
+	if len(videoDescriptions) == 0 {
+		return nil, fmt.Errorf("no videos to generate story")
 	}
+	numChapters := len(videoDescriptions)
 
 	// 根據關係設定稱呼
 	ownerTitle := project.OwnerRelationship
@@ -1577,7 +1588,7 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 「每次你叫我名字，我的耳朵就自己豎起來，我根本沒辦法不理你。」
 「%s，我今天有超乖，所以可以多給我一個抱抱嗎？就一個就好啦嘿嘿。」`,
 			ownerTitle, ownerTitle)
-		modeChapter5Instruction = "第 5 段要比前幾段更撒嬌，帶著依依不捨但又俏皮的感覺，像是「就算你出門不帶我，我也要偷偷跟去啦」這類句子，讓人忍不住又笑又鼻酸。"
+		modeChapter5Instruction = "最後一段要比前幾段更撒嬌，帶著依依不捨但又俏皮的感覺，像是「就算你出門不帶我，我也要偷偷跟去啦」這類句子，讓人忍不住又笑又鼻酸。"
 
 	default: // warm - 溫馨感人
 		modeStyle = "溫柔、感性、很在意細節的小天使狗狗"
@@ -1586,72 +1597,66 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 「只要你在，我就覺得家裡好安靜、好安全，我可以放心地睡在你腳邊。」
 「謝謝你一直陪著我，累的時候還是會摸摸我、叫我的名字，我真的好喜歡那個聲音。」`,
 			ownerTitle)
-		modeChapter5Instruction = "第 5 段要特別有感情，帶一點不捨與感謝，可以提到「就算看不到我，我還是在你身邊」這類句子，讓人覺得被好好抱住。"
+		modeChapter5Instruction = "最後一段要特別有感情，帶一點不捨與感謝，可以提到「就算看不到我，我還是在你身邊」這類句子，讓人覺得被好好抱住。"
 	}
 
-	// 構建 prompt - 生成 5 段狗狗對白（加長、加細節）
-	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s，是一個有靈魂的小毛孩。  
-請用「第一人稱」的口吻，像一個 3～5 歲的小朋友，在看著這些回憶影片時，  
-對你的「%s」說悄悄話。
+	// 構建 prompt - 一支影片一段對白，且必須緊扣該片實際畫面（避免文字對不上影片）
+	prompt := fmt.Sprintf(`你是一隻名叫「%s」的%s，是一個有靈魂的小毛孩。
+請用「第一人稱」的口吻，像一個 3～5 歲的小朋友，看著這些回憶影片，對你的「%s」說悄悄話。
 
 🎭 本次風格設定：
 - 角色性格：%s
 - 情感基調：%s
 - 你非常愛你的%s，也非常依賴他/她。
 
-下面是剪輯出來的影片片段描述（每一行是一個高光片段）：
+下面是這次要做成影片的片段，每一行是「一支影片」的實際畫面描述（依序編號）：
 %s
 
-請根據這些片段，替「狗狗本人」寫出 5 段對白，每段是狗狗在看著對應影片時心裡說的話。
+請替「狗狗本人」寫出正好 %d 段對白，一支影片一段、順序與上面完全一致：
+第 0 段對應「影片 0」、第 1 段對應「影片 1」，以此類推。
 
-創作要求：
-1. 語氣設定：
-   - 用「我」來稱呼自己，用「%s」來稱呼對方。
-   - 口吻單純、直接，有點像小孩講話，但可以有情緒層次。
-2. 內容重點：
-   - 每一段要盡量呼應該段影片的畫面與情境（跑、撲、一起睡覺、散步…）。
-   - 可以具體描述畫面，例如「我衝過去撲在你身上」、「我趴在門口等你」。
-3. 長度與結構：
-   - 每段對白請寫成「2～3 句短句」。
-   - 整段總長度約 40～70 個中文字，不要太短。
-4. 情緒控制：
-   - 前 1～4 段可以偏日常、溫暖、搞笑或可愛（依照風格）。
-   - %s
-   - 不要過度灑狗血，不要連發很多「謝謝你」而沒有具體畫面。
-5. 文字風格：
-   - 避免太制式的句子（例如「你是我最好的朋友」、「謝謝你的陪伴」可以出現，但不要一整段都在講這種話）。
-   - 盡量多一點畫面感與細節，少一點空泛形容詞。
+🚨 最重要的規則（務必遵守，否則文字會跟畫面對不上）：
+- 每一段「只能描述該編號影片裡實際出現的畫面與動作」。
+- 嚴禁虛構描述裡沒提到的場景或動作。例如描述沒提到「門口、散步、睡覺、奔跑」，就絕對不要寫。
+- 若描述是「在車內被抱著」，就寫被抱著、靠在身上、吐舌的感覺，不要寫成在外面跑跳。
 
-你可以參考以下風格示意（只參考語氣與情緒，不要直接抄）：
+其他要求：
+1. 用「我」稱呼自己，用「%s」稱呼對方；口吻單純直接、像小孩講話、有情緒層次。
+2. 每段 2～3 句短句，約 30～60 個中文字。
+3. 情緒大多溫暖／可愛（依風格）；%s
+4. 少用空泛形容詞與制式句（如「你是我最好的朋友」「謝謝你的陪伴」），多寫來自該畫面的具體細節。
+
+風格示意（只參考語氣與情緒，不要照抄）：
 %s
 
-請用 **嚴格 JSON 格式** 回應，內容必須是正好 5 個 chapters，例如：
+請用「嚴格 JSON」回應，chapters 必須正好 %d 段，video_index 依序為 0,1,2…：
 
 {
   "title": "給%s的悄悄話",
   "chapters": [
-    {"narration": "第一段對白", "video_index": 0, "highlight_index": 0},
-    {"narration": "第二段對白", "video_index": 1, "highlight_index": 0},
-    {"narration": "第三段對白", "video_index": 2, "highlight_index": 0},
-    {"narration": "第四段對白", "video_index": 3, "highlight_index": 0},
-    {"narration": "第五段對白", "video_index": 4, "highlight_index": 0}
+    {"narration": "對應影片0的對白", "video_index": 0, "highlight_index": 0},
+    {"narration": "對應影片1的對白", "video_index": 1, "highlight_index": 0}
   ]
 }
 
 注意：
-- 只回傳 JSON，不要任何註解、解說、markdown 或額外符號。
-- narration 必須是完整中文句子，符合上述長度與情感要求。`,
+- chapters 數量必須「正好等於 %d」，video_index 從 0 連續編到 %d，不可跳號或超出。
+- 只回傳 JSON，不要任何註解、markdown 或多餘文字。`,
 		project.DogName,
 		dogBreed,
 		ownerTitle,
 		modeStyle,
 		modeEmotion,
 		ownerTitle,
-		strings.Join(allHighlights, "\n"),
+		strings.Join(videoDescriptions, "\n"),
+		numChapters,
 		ownerTitle,
 		modeChapter5Instruction,
 		modeExamples,
-		ownerTitle)
+		numChapters,
+		ownerTitle,
+		numChapters,
+		numChapters-1)
 
 	// 調用 OpenRouter (OpenAI-compatible) API
 	log.Printf("🤖 Using Text Model for story: %s", aiTextModel)
