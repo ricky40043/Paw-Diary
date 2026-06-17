@@ -116,6 +116,7 @@
               <p class="size">
                 {{ formatFileSize(video.size) }}
                 <span v-if="video.status === 'uploading'" class="st up">· 上傳中 {{ video.progress }}%</span>
+                <span v-else-if="video.status === 'pending'" class="st wait">· 等待中…</span>
                 <span v-else-if="video.status === 'done'" class="st ok">· ✅ 已上傳</span>
                 <span v-else-if="video.status === 'error'" class="st err">· ❌ {{ video.error || '上傳失敗' }}</span>
               </p>
@@ -130,7 +131,7 @@
 
         <p class="upload-hint">
           已上傳 {{ doneCount }} / {{ videoCount }} 個影片
-          <span v-if="uploadingCount > 0">（{{ uploadingCount }} 個上傳中…）</span>
+          <span v-if="inFlightCount > 0">（一次傳一支，還有 {{ inFlightCount }} 支處理中…）</span>
         </p>
 
         <div class="actions">
@@ -140,7 +141,7 @@
             :disabled="!canProceedStep2"
             class="btn-primary"
           >
-            {{ uploadingCount > 0 ? `上傳中…（${uploadingCount}）` : '下一步' }}
+            {{ inFlightCount > 0 ? `上傳中…（剩 ${inFlightCount}）` : '下一步' }}
           </button>
         </div>
       </div>
@@ -158,15 +159,18 @@
           <div v-else class="image-preview">
             <img v-if="imagePreview" :src="imagePreview" alt="結尾圖片" />
             <p v-else class="hint" style="text-align:center">✅ 已上傳結尾圖片</p>
-            <p v-if="uploadingImage" class="upload-hint">上傳中…</p>
+            <template v-if="uploadingImage">
+              <p class="upload-hint st up">上傳中… {{ imageProgress }}%</p>
+              <div class="mini-progress"><div class="mini-progress-bar" :style="{ width: imageProgress + '%' }"></div></div>
+            </template>
             <p v-else-if="endingUploaded" class="upload-hint" style="color:#4caf50">✅ 上傳完成</p>
-            <button type="button" @click="$refs.imageInput.click()" class="btn-remove">更換圖片</button>
+            <button type="button" @click="$refs.imageInput.click()" class="btn-remove" :disabled="uploadingImage">更換圖片</button>
           </div>
         </div>
         <input
           ref="imageInput"
           type="file"
-          accept="image/jpeg,image/jpg,image/png"
+          accept="image/*"
           @change="handleImageSelect"
           style="display: none"
         />
@@ -275,6 +279,7 @@ const endingImage = ref(null)
 const imagePreview = ref('')
 const imageInput = ref(null)
 const uploadingImage = ref(false)
+const imageProgress = ref(0)
 const endingUploaded = ref(false)
 
 // Step 4: 留言
@@ -361,8 +366,9 @@ const restore = async () => {
 
 onMounted(restore)
 
-// 任一關鍵狀態變動就保存
-watch([currentStep, projectId, dogName, ownerRelationship, storyMode, ownerMessage, endingUploaded, videos], persist, { deep: true })
+// 任一關鍵狀態變動就保存（videos 不放進 watch，改在上傳完成/移除時明確 persist，
+// 避免上傳進度每跳一格就寫一次 localStorage 造成手機卡頓）
+watch([currentStep, projectId, dogName, ownerRelationship, storyMode, ownerMessage, endingUploaded], persist)
 
 // 計算屬性
 const canProceedStep1 = computed(() =>
@@ -371,7 +377,9 @@ const canProceedStep1 = computed(() =>
 const videoCount = computed(() => videos.value.length)
 const doneCount = computed(() => videos.value.filter(v => v.status === 'done').length)
 const uploadingCount = computed(() => videos.value.filter(v => v.status === 'uploading').length)
-const canProceedStep2 = computed(() => doneCount.value >= 1 && uploadingCount.value === 0)
+const pendingCount = computed(() => videos.value.filter(v => v.status === 'pending').length)
+const inFlightCount = computed(() => uploadingCount.value + pendingCount.value)
+const canProceedStep2 = computed(() => doneCount.value >= 1 && inFlightCount.value === 0)
 const canSubmitMessage = computed(() => ownerMessage.value.trim().length >= 10)
 
 const createProject = async () => {
@@ -399,39 +407,35 @@ const formatFileSize = (bytes) => {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-const CHUNK_SIZE = 20 * 1024 * 1024 // 20MB
+const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB：手機與反向代理友善，進度更新更頻繁
 
-// 分塊上傳，逐塊回報進度
+// 分塊上傳：逐塊「序列」送出，並用 onUploadProgress 提供位元組級即時進度
 const uploadFileChunked = async (pid, entry) => {
   const file = entry.file
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
   const fileId = Date.now().toString(36) + Math.random().toString(36).substr(2)
-  let doneChunks = 0
   let assembled = null
 
-  const PARALLEL = 3
-  for (let i = 0; i < totalChunks; i += PARALLEL) {
-    const batch = []
-    for (let j = i; j < Math.min(i + PARALLEL, totalChunks); j++) {
-      const start = j * CHUNK_SIZE
-      const chunk = file.slice(start, Math.min(start + CHUNK_SIZE, file.size))
-      const formData = new FormData()
-      formData.append('chunk', chunk)
-      formData.append('file_id', fileId)
-      formData.append('chunk_index', j)
-      formData.append('total_chunks', totalChunks)
-      formData.append('filename', file.name)
-      batch.push(
-        axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        }).then((res) => {
-          doneChunks++
-          entry.progress = Math.round((doneChunks / totalChunks) * 100)
-          if (res.data && res.data.assembled) assembled = res.data.video
-        })
-      )
-    }
-    await Promise.all(batch)
+  for (let j = 0; j < totalChunks; j++) {
+    const start = j * CHUNK_SIZE
+    const end = Math.min(start + CHUNK_SIZE, file.size)
+    const chunk = file.slice(start, end)
+    const formData = new FormData()
+    formData.append('chunk', chunk)
+    formData.append('file_id', fileId)
+    formData.append('chunk_index', j)
+    formData.append('total_chunks', totalChunks)
+    formData.append('filename', file.name)
+    const res = await axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000, // 單一 5MB 分塊逾時保護，避免無限卡 0%
+      onUploadProgress: (e) => {
+        // 已送出的分塊位元組 + 目前分塊已上傳位元組 → 平滑整體百分比
+        const uploaded = start + (e.loaded || 0)
+        entry.progress = Math.min(99, Math.round((uploaded / file.size) * 100))
+      }
+    })
+    if (res.data && res.data.assembled) assembled = res.data.video
   }
   return assembled
 }
@@ -444,15 +448,17 @@ const uploadOne = async (entry) => {
   entry.error = ''
   try {
     let video
-    if (entry.file.size > 25 * 1024 * 1024) {
+    // 大於 8MB 走分塊（每塊 5MB），避免手機/代理對單一大請求的限制
+    if (entry.file.size > 8 * 1024 * 1024) {
       video = await uploadFileChunked(projectId.value, entry)
     } else {
       const formData = new FormData()
       formData.append('videos', entry.file)
       const res = await axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
         onUploadProgress: (e) => {
-          if (e.total) entry.progress = Math.round((e.loaded / e.total) * 100)
+          if (e.total) entry.progress = Math.min(99, Math.round((e.loaded / e.total) * 100))
         }
       })
       video = res.data?.videos?.[0]
@@ -464,7 +470,23 @@ const uploadOne = async (entry) => {
     persist()
   } catch (error) {
     entry.status = 'error'
-    entry.error = error.response?.data?.error || error.message
+    entry.error = error.response?.data?.error || error.message || '上傳失敗'
+  }
+}
+
+// 序列式上傳佇列：一次只傳一支，其餘排隊「等待中」
+let uploadRunning = false
+const processUploadQueue = async () => {
+  if (uploadRunning) return
+  uploadRunning = true
+  try {
+    while (true) {
+      const next = videos.value.find(v => v.status === 'pending' && v.file)
+      if (!next) break
+      await uploadOne(next)
+    }
+  } finally {
+    uploadRunning = false
   }
 }
 
@@ -472,25 +494,26 @@ const handleVideoSelect = (event) => {
   addingVideo.value = true
   const newFiles = Array.from(event.target.files || [])
   const seen = new Set(videos.value.map(v => v.name + v.size))
-  const toUpload = []
   for (const f of newFiles) {
     const key = f.name + f.size
     if (!seen.has(key) && videos.value.length < 5) {
       seen.add(key)
-      const entry = { key: key + Math.random().toString(36).slice(2), id: '', name: f.name, size: f.size, status: 'uploading', progress: 0, error: '', file: f }
-      videos.value.push(entry)
-      toUpload.push(entry)
+      // 先排入佇列（等待中），由 processUploadQueue 一支一支上傳
+      videos.value.push({ key: key + Math.random().toString(36).slice(2), id: '', name: f.name, size: f.size, status: 'pending', progress: 0, error: '', file: f })
     }
   }
   event.target.value = ''
   addingVideo.value = false
-  // 選完立刻並行自動上傳
-  toUpload.forEach(uploadOne)
+  processUploadQueue()
 }
 
 const retryUpload = (index) => {
   const entry = videos.value[index]
-  if (entry && entry.file) uploadOne(entry)
+  if (entry && entry.file) {
+    entry.status = 'pending'
+    entry.error = ''
+    processUploadQueue()
+  }
 }
 
 const removeVideo = async (index) => {
@@ -505,25 +528,64 @@ const removeVideo = async (index) => {
   }
 }
 
+// 上傳前在手機端把圖片縮小（最長邊 maxSize、JPEG），原圖可能 5–10MB，
+// 縮完只剩幾百 KB，慢速行動網路也能秒傳（最終影片 720p，畫質無差）。
+// iOS Safari 可解 HEIC；若解碼失敗就退回原檔。
+const downscaleImage = (file, maxSize = 1600, quality = 0.85) => new Promise((resolve) => {
+  if (!file || !file.type || !file.type.startsWith('image/')) return resolve(file)
+  const url = URL.createObjectURL(file)
+  const img = new Image()
+  img.onload = () => {
+    URL.revokeObjectURL(url)
+    let { width, height } = img
+    if (!width || !height) return resolve(file)
+    const longest = Math.max(width, height)
+    if (longest > maxSize) {
+      const r = maxSize / longest
+      width = Math.round(width * r); height = Math.round(height * r)
+    }
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = width; canvas.height = height
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+      canvas.toBlob((blob) => {
+        if (blob && blob.size > 0) {
+          const name = (file.name || 'ending').replace(/\.[^.]+$/, '') + '.jpg'
+          resolve(new File([blob], name, { type: 'image/jpeg' }))
+        } else resolve(file)
+      }, 'image/jpeg', quality)
+    } catch (e) { resolve(file) }
+  }
+  img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+  img.src = url
+})
+
 const handleImageSelect = async (event) => {
   const file = event.target.files[0]
   event.target.value = ''
   if (!file) return
-  endingImage.value = file
   imagePreview.value = URL.createObjectURL(file)
   endingUploaded.value = false
-  // 選完即自動上傳結尾圖片
   uploadingImage.value = true
+  imageProgress.value = 0
   try {
+    // 先縮圖再上傳
+    const smaller = await downscaleImage(file)
+    endingImage.value = smaller
     const formData = new FormData()
-    formData.append('image', file)
+    formData.append('image', smaller)
     await axios.post(`/api/v2/story/projects/${projectId.value}/ending-image`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+      onUploadProgress: (e) => {
+        if (e.total) imageProgress.value = Math.min(99, Math.round((e.loaded / e.total) * 100))
+      }
     })
+    imageProgress.value = 100
     endingUploaded.value = true
     persist()
   } catch (error) {
-    alert('上傳圖片失敗：' + (error.response?.data?.error || error.message))
+    alert('上傳圖片失敗：' + (error.response?.data?.error || error.message || '請重試'))
   } finally {
     uploadingImage.value = false
   }
@@ -928,9 +990,11 @@ h2 {
 .video-num.done { background: #4caf50; }
 .video-num.error { background: #f44336; }
 .video-num.uploading { background: #ff9800; }
+.video-num.pending { background: #b0b6c8; }
 
 .st { font-weight: 600; }
 .st.up { color: #ff9800; }
+.st.wait { color: #999; }
 .st.ok { color: #4caf50; }
 .st.err { color: #f44336; }
 
