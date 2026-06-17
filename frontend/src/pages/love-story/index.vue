@@ -828,6 +828,11 @@ h2 {
 
 /* 影片上傳 */
 .video-drop-zone {
+  /* label 預設是 inline，有邊框時跨行會把虛線框拆成碎片；改 flex 讓它變成完整方塊 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   border: 3px dashed #667eea;
   border-radius: 15px;
   padding: 2.5rem 1rem;
