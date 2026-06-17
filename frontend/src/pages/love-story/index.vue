@@ -76,20 +76,18 @@
       <!-- Step 2: 上傳影片 -->
       <div v-if="currentStep === 2" class="step-card">
         <h2>步驟 2：上傳影片</h2>
-        <p class="hint">選擇 1～5 個與狗狗互動的溫馨片段，每個影片會被剪輯成約 15 秒</p>
+        <p class="hint">選擇 1～5 個與狗狗互動的溫馨片段，<strong>選好就會自動上傳</strong>，每個影片會被剪輯成約 15 秒</p>
 
         <!-- 選擇區：用 label 觸發 input，iOS Safari 相容性最佳 -->
         <label
           for="videoInput"
           class="video-drop-zone"
-          :class="{ disabled: videoCount >= 5 || addingVideo }"
-          :style="videoCount >= 5 || addingVideo ? 'pointer-events: none' : 'cursor: pointer'"
+          :class="{ disabled: videoCount >= 5 }"
+          :style="videoCount >= 5 ? 'pointer-events: none' : 'cursor: pointer'"
         >
-          <div v-if="addingVideo" class="mini-spinner"></div>
-          <div v-else class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
+          <div class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
           <p>
-            <span v-if="addingVideo">正在讀取影片，請稍候...</span>
-            <span v-else-if="videoCount >= 5">已達上限 5 個</span>
+            <span v-if="videoCount >= 5">已達上限 5 個</span>
             <span v-else-if="videoCount === 0">點擊選擇影片</span>
             <span v-else>已選 {{ videoCount }} 個，點擊繼續新增</span>
           </p>
@@ -105,31 +103,44 @@
           style="display: none"
         />
 
-        <!-- 已選影片清單 -->
+        <!-- 已選影片清單（逐支顯示上傳狀態） -->
         <div v-if="videoCount > 0" class="video-list">
-          <div v-for="(video, index) in videos" :key="index" class="video-list-item">
-            <span class="video-num">{{ index + 1 }}</span>
+          <div v-for="(video, index) in videos" :key="video.key" class="video-list-item">
+            <span class="video-num" :class="video.status">
+              <template v-if="video.status === 'done'">✓</template>
+              <template v-else-if="video.status === 'error'">!</template>
+              <template v-else>{{ index + 1 }}</template>
+            </span>
             <div class="video-info">
               <p class="name">{{ video.name }}</p>
-              <p class="size">{{ formatFileSize(video.size) }}</p>
+              <p class="size">
+                {{ formatFileSize(video.size) }}
+                <span v-if="video.status === 'uploading'" class="st up">· 上傳中 {{ video.progress }}%</span>
+                <span v-else-if="video.status === 'done'" class="st ok">· ✅ 已上傳</span>
+                <span v-else-if="video.status === 'error'" class="st err">· ❌ {{ video.error || '上傳失敗' }}</span>
+              </p>
+              <div v-if="video.status === 'uploading'" class="mini-progress">
+                <div class="mini-progress-bar" :style="{ width: video.progress + '%' }"></div>
+              </div>
             </div>
+            <button v-if="video.status === 'error'" type="button" @click="retryUpload(index)" class="btn-retry">重試</button>
             <button type="button" @click="removeVideo(index)" class="btn-remove">✕</button>
           </div>
         </div>
 
-        <p class="upload-hint" :class="{ warn: videoCount > 5 }">
-          已選擇 {{ videoCount }} / 5 個影片
-          <span v-if="videoCount > 5">（超過上限，請移除多餘的）</span>
+        <p class="upload-hint">
+          已上傳 {{ doneCount }} / {{ videoCount }} 個影片
+          <span v-if="uploadingCount > 0">（{{ uploadingCount }} 個上傳中…）</span>
         </p>
 
         <div class="actions">
           <button @click="currentStep = 1" class="btn-secondary">上一步</button>
           <button
-            @click="uploadVideos"
-            :disabled="videoCount < 1 || videoCount > 5 || uploading"
+            @click="currentStep = 3"
+            :disabled="!canProceedStep2"
             class="btn-primary"
           >
-            {{ uploading ? `上傳中 ${uploadProgress}%` : '上傳影片' }}
+            {{ uploadingCount > 0 ? `上傳中…（${uploadingCount}）` : '下一步' }}
           </button>
         </div>
       </div>
@@ -137,31 +148,34 @@
       <!-- Step 3: 上傳結尾圖片 -->
       <div v-if="currentStep === 3" class="step-card">
         <h2>步驟 3：上傳結尾圖片</h2>
-        <p class="hint">選擇一張狗狗的照片作為影片結尾</p>
-        
+        <p class="hint">選擇一張狗狗的照片作為影片結尾，<strong>選好就會自動上傳</strong></p>
+
         <div class="image-upload">
-          <div v-if="!endingImage" class="upload-placeholder" @click="$refs.imageInput.click()">
+          <div v-if="!endingImage && !endingUploaded" class="upload-placeholder" @click="$refs.imageInput.click()">
             <div class="icon">🖼️</div>
             <p>選擇圖片</p>
           </div>
           <div v-else class="image-preview">
-            <img :src="imagePreview" alt="結尾圖片" />
-            <button type="button" @click="removeImage" class="btn-remove">更換圖片</button>
+            <img v-if="imagePreview" :src="imagePreview" alt="結尾圖片" />
+            <p v-else class="hint" style="text-align:center">✅ 已上傳結尾圖片</p>
+            <p v-if="uploadingImage" class="upload-hint">上傳中…</p>
+            <p v-else-if="endingUploaded" class="upload-hint" style="color:#4caf50">✅ 上傳完成</p>
+            <button type="button" @click="$refs.imageInput.click()" class="btn-remove">更換圖片</button>
           </div>
         </div>
-        <input 
-          ref="imageInput" 
-          type="file" 
-          accept="image/jpeg,image/jpg,image/png" 
-          @change="handleImageSelect" 
+        <input
+          ref="imageInput"
+          type="file"
+          accept="image/jpeg,image/jpg,image/png"
+          @change="handleImageSelect"
           style="display: none"
         />
-        
+
         <div class="actions">
           <button @click="currentStep = 2" class="btn-secondary">上一步</button>
-          <button 
-            @click="uploadImage" 
-            :disabled="!endingImage || uploadingImage"
+          <button
+            @click="currentStep = 4"
+            :disabled="!endingUploaded || uploadingImage"
             class="btn-primary"
           >
             {{ uploadingImage ? '上傳中...' : '下一步' }}
@@ -232,7 +246,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import axios from 'axios'
 
 // 步驟狀態
@@ -250,20 +264,20 @@ const dogBreed = ref('') // 保留變數但UI隱藏
 const ownerRelationship = ref('媽媽')
 const relations = ['爸爸', '媽媽', '哥哥', '姊姊', '弟弟', '妹妹', '主人']
 
-// Step 3: 影片
+// Step 2: 影片（每支獨立狀態，選完即自動上傳）
+// 每筆：{ key, id, name, size, status: 'uploading'|'done'|'error', progress, error, file }
 const videos = ref([])
 const videoInput = ref(null)
-const uploading = ref(false)
-const uploadProgress = ref(0)
 const addingVideo = ref(false)
 
-// Step 4: 圖片
+// Step 3: 圖片
 const endingImage = ref(null)
 const imagePreview = ref('')
 const imageInput = ref(null)
 const uploadingImage = ref(false)
+const endingUploaded = ref(false)
 
-// Step 5: 留言
+// Step 4: 留言
 const ownerMessage = ref('')
 const submittingMessage = ref(false)
 
@@ -272,70 +286,129 @@ const projectId = ref('')
 const statusMessage = ref('')
 const progress = ref(0)
 const result = ref(null)
+let pollTimer = null
+
+// ---------------------------------------------------------------------------
+// localStorage 狀態保存：手機不小心滑掉 / 重新整理也不會全部消失
+// （已上傳的影片存在伺服器，用 id 追蹤；File 本體無法保存，但不需要重傳）
+// ---------------------------------------------------------------------------
+const STORE_KEY = 'pawDiaryState'
+
+const persist = () => {
+  try {
+    const snapshot = {
+      currentStep: currentStep.value,
+      projectId: projectId.value,
+      dogName: dogName.value,
+      dogBreed: dogBreed.value,
+      ownerRelationship: ownerRelationship.value,
+      storyMode: storyMode.value,
+      ownerMessage: ownerMessage.value,
+      endingUploaded: endingUploaded.value,
+      // 只保存已上傳成功的影片（去掉 File 本體）
+      videos: videos.value
+        .filter(v => v.status === 'done' && v.id)
+        .map(v => ({ key: v.key, id: v.id, name: v.name, size: v.size, status: 'done', progress: 100 }))
+    }
+    localStorage.setItem(STORE_KEY, JSON.stringify(snapshot))
+  } catch (e) { /* 隱私模式可能無法寫入，忽略 */ }
+}
+
+const clearPersist = () => {
+  try { localStorage.removeItem(STORE_KEY) } catch (e) {}
+}
+
+const restore = async () => {
+  let snap
+  try { snap = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') } catch (e) { snap = null }
+  if (!snap || !snap.projectId) return
+
+  // 先確認伺服器上的專案還在（伺服器重啟會清空），否則放棄還原
+  let server
+  try {
+    const res = await axios.get(`/api/v2/story/projects/${snap.projectId}`)
+    server = res.data
+  } catch (e) {
+    clearPersist()
+    return
+  }
+
+  projectId.value = snap.projectId
+  dogName.value = snap.dogName || ''
+  dogBreed.value = snap.dogBreed || ''
+  ownerRelationship.value = snap.ownerRelationship || '媽媽'
+  storyMode.value = snap.storyMode || 'warm'
+  ownerMessage.value = snap.ownerMessage || ''
+  endingUploaded.value = !!snap.endingUploaded
+
+  // 以伺服器實際擁有的影片為準（避免顯示已被刪除的）
+  const serverIds = new Set((server.videos || []).map(v => v.id))
+  videos.value = (snap.videos || [])
+    .filter(v => serverIds.has(v.id))
+    .map(v => ({ ...v, file: null, error: '' }))
+
+  const status = server.status
+  if (status === 'completed') {
+    result.value = server
+    currentStep.value = 6
+  } else if (status === 'analyzing' || status === 'generating_story' || status === 'generating_video' || status === 'processing') {
+    currentStep.value = 5
+    pollProgress()
+  } else {
+    currentStep.value = Math.min(snap.currentStep || 1, 4)
+  }
+}
+
+onMounted(restore)
+
+// 任一關鍵狀態變動就保存
+watch([currentStep, projectId, dogName, ownerRelationship, storyMode, ownerMessage, endingUploaded, videos], persist, { deep: true })
 
 // 計算屬性
-const canProceedStep1 = computed(() => {
-  return dogName.value.trim().length > 0 && ownerRelationship.value !== '' && storyMode.value
-})
+const canProceedStep1 = computed(() =>
+  dogName.value.trim().length > 0 && ownerRelationship.value !== '' && !!storyMode.value)
 
 const videoCount = computed(() => videos.value.length)
-
-const canSubmitMessage = computed(() => {
-  return ownerMessage.value.trim().length >= 10
-})
+const doneCount = computed(() => videos.value.filter(v => v.status === 'done').length)
+const uploadingCount = computed(() => videos.value.filter(v => v.status === 'uploading').length)
+const canProceedStep2 = computed(() => doneCount.value >= 1 && uploadingCount.value === 0)
+const canSubmitMessage = computed(() => ownerMessage.value.trim().length >= 10)
 
 const createProject = async () => {
   if (!canProceedStep1.value) return
-  
   try {
-    const response = await axios.post('/api/v2/story/projects', {
-      name: `${dogName.value}的告白`,
-      dog_name: dogName.value,
-      dog_breed: dogBreed.value,
-      owner_relationship: ownerRelationship.value,
-      story_mode: storyMode.value
-    })
-    
-    projectId.value = response.data.project_id
+    // 已有專案就重用，避免返回上一步又建立重複專案
+    if (!projectId.value) {
+      const response = await axios.post('/api/v2/story/projects', {
+        name: `${dogName.value}的告白`,
+        dog_name: dogName.value,
+        dog_breed: dogBreed.value,
+        owner_relationship: ownerRelationship.value,
+        story_mode: storyMode.value
+      })
+      projectId.value = response.data.project_id
+    }
     currentStep.value = 2
   } catch (error) {
     alert('建立專案失敗：' + (error.response?.data?.error || error.message))
   }
 }
 
-const handleVideoSelect = (event) => {
-  addingVideo.value = true
-  setTimeout(() => {
-    const newFiles = Array.from(event.target.files || [])
-    const seen = new Set(videos.value.map(f => f.name + f.size))
-    for (const f of newFiles) {
-      const key = f.name + f.size
-      if (!seen.has(key) && videos.value.length < 5) {
-        seen.add(key)
-        videos.value.push(f)
-      }
-    }
-    event.target.value = ''
-    addingVideo.value = false
-  }, 50)
-}
-
-const removeVideo = (index) => {
-  videos.value.splice(index, 1)
-}
-
 const formatFileSize = (bytes) => {
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 const CHUNK_SIZE = 20 * 1024 * 1024 // 20MB
 
-const uploadFileChunked = async (pid, file, onChunkDone) => {
+// 分塊上傳，逐塊回報進度
+const uploadFileChunked = async (pid, entry) => {
+  const file = entry.file
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
   const fileId = Date.now().toString(36) + Math.random().toString(36).substr(2)
+  let doneChunks = 0
+  let assembled = null
 
-  // 同時送最多 3 個 chunk，加快上傳速度
   const PARALLEL = 3
   for (let i = 0; i < totalChunks; i += PARALLEL) {
     const batch = []
@@ -351,80 +424,104 @@ const uploadFileChunked = async (pid, file, onChunkDone) => {
       batch.push(
         axios.post(`/api/v2/story/projects/${pid}/video-chunk`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
-        }).then(() => onChunkDone && onChunkDone())
+        }).then((res) => {
+          doneChunks++
+          entry.progress = Math.round((doneChunks / totalChunks) * 100)
+          if (res.data && res.data.assembled) assembled = res.data.video
+        })
       )
     }
     await Promise.all(batch)
   }
+  return assembled
 }
 
-const uploadVideos = async () => {
-  uploading.value = true
-  uploadProgress.value = 0
-
+// 上傳單一影片（自動判斷是否分塊），逐支回報狀態
+const uploadOne = async (entry) => {
+  if (!projectId.value || !entry.file) return
+  entry.status = 'uploading'
+  entry.progress = 0
+  entry.error = ''
   try {
-    const fileList = videos.value
-    // 計算總 chunk 數以追蹤整體進度
-    let totalChunks = 0
-    let doneChunks = 0
-    for (const video of fileList) {
-      totalChunks += video.size > 25 * 1024 * 1024
-        ? Math.ceil(video.size / CHUNK_SIZE)
-        : 1
+    let video
+    if (entry.file.size > 25 * 1024 * 1024) {
+      video = await uploadFileChunked(projectId.value, entry)
+    } else {
+      const formData = new FormData()
+      formData.append('videos', entry.file)
+      const res = await axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (e.total) entry.progress = Math.round((e.loaded / e.total) * 100)
+        }
+      })
+      video = res.data?.videos?.[0]
     }
-
-    const onChunkDone = () => {
-      doneChunks++
-      uploadProgress.value = Math.round((doneChunks / totalChunks) * 100)
-    }
-
-    // 所有影片同時並行上傳
-    await Promise.all(fileList.map(video => {
-      if (video.size > 25 * 1024 * 1024) {
-        return uploadFileChunked(projectId.value, video, onChunkDone)
-      } else {
-        const formData = new FormData()
-        formData.append('videos', video)
-        return axios.post(`/api/v2/story/projects/${projectId.value}/videos`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        }).then(() => onChunkDone())
-      }
-    }))
-
-    currentStep.value = 3
+    if (video && video.id) entry.id = video.id
+    entry.status = 'done'
+    entry.progress = 100
+    entry.file = null // 釋放記憶體，且不會再被重傳
+    persist()
   } catch (error) {
-    alert('上傳影片失敗：' + (error.response?.data?.error || error.message))
-  } finally {
-    uploading.value = false
-    uploadProgress.value = 0
+    entry.status = 'error'
+    entry.error = error.response?.data?.error || error.message
   }
 }
 
-const handleImageSelect = (event) => {
+const handleVideoSelect = (event) => {
+  addingVideo.value = true
+  const newFiles = Array.from(event.target.files || [])
+  const seen = new Set(videos.value.map(v => v.name + v.size))
+  const toUpload = []
+  for (const f of newFiles) {
+    const key = f.name + f.size
+    if (!seen.has(key) && videos.value.length < 5) {
+      seen.add(key)
+      const entry = { key: key + Math.random().toString(36).slice(2), id: '', name: f.name, size: f.size, status: 'uploading', progress: 0, error: '', file: f }
+      videos.value.push(entry)
+      toUpload.push(entry)
+    }
+  }
+  event.target.value = ''
+  addingVideo.value = false
+  // 選完立刻並行自動上傳
+  toUpload.forEach(uploadOne)
+}
+
+const retryUpload = (index) => {
+  const entry = videos.value[index]
+  if (entry && entry.file) uploadOne(entry)
+}
+
+const removeVideo = async (index) => {
+  const entry = videos.value[index]
+  videos.value.splice(index, 1)
+  persist()
+  // 已上傳到伺服器的，連同伺服器檔案一起刪除
+  if (entry && entry.id && projectId.value) {
+    try {
+      await axios.delete(`/api/v2/story/projects/${projectId.value}/videos/${entry.id}`)
+    } catch (e) { /* 忽略刪除失敗 */ }
+  }
+}
+
+const handleImageSelect = async (event) => {
   const file = event.target.files[0]
-  if (file) {
-    endingImage.value = file
-    imagePreview.value = URL.createObjectURL(file)
-  }
-}
-
-const removeImage = () => {
-  endingImage.value = null
-  imagePreview.value = ''
-}
-
-const uploadImage = async () => {
+  event.target.value = ''
+  if (!file) return
+  endingImage.value = file
+  imagePreview.value = URL.createObjectURL(file)
+  endingUploaded.value = false
+  // 選完即自動上傳結尾圖片
   uploadingImage.value = true
-  
   try {
     const formData = new FormData()
-    formData.append('image', endingImage.value)
-    
+    formData.append('image', file)
     await axios.post(`/api/v2/story/projects/${projectId.value}/ending-image`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
-    
-    currentStep.value = 4
+    endingUploaded.value = true
+    persist()
   } catch (error) {
     alert('上傳圖片失敗：' + (error.response?.data?.error || error.message))
   } finally {
@@ -432,17 +529,20 @@ const uploadImage = async () => {
   }
 }
 
+const removeImage = () => {
+  endingImage.value = null
+  imagePreview.value = ''
+  endingUploaded.value = false
+}
+
 const submitOwnerMessage = async () => {
   if (!canSubmitMessage.value) return
-  
   submittingMessage.value = true
   try {
     await axios.post(`/api/v2/story/projects/${projectId.value}/owner-message`, {
       message: ownerMessage.value
     })
-
     await axios.post(`/api/v2/story/projects/${projectId.value}/generate`)
-    
     currentStep.value = 5
     pollProgress()
   } catch (error) {
@@ -452,40 +552,51 @@ const submitOwnerMessage = async () => {
   }
 }
 
-const pollProgress = async () => {
-  const interval = setInterval(async () => {
+// 進度查詢：單調遞增、不倒退，並依後端實際 progress 平滑顯示
+const STATUS_TEXT = {
+  analyzing: '正在分析影片內容…',
+  generating_story: '正在創作對白…',
+  generating_video: '正在合成最終影片…',
+  processing: '處理中…'
+}
+const STATUS_FLOOR = { analyzing: 8, generating_story: 50, generating_video: 70, processing: 5 }
+
+const pollProgress = () => {
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = setInterval(async () => {
     try {
       const response = await axios.get(`/api/v2/story/projects/${projectId.value}`)
       const status = response.data.status
-      
-      if (status === 'analyzing') {
-        statusMessage.value = '正在分析影片內容...'
-        progress.value = response.data.progress || 25
-      } else if (status === 'generating_story') {
-        statusMessage.value = '正在創作對白...'
-        progress.value = response.data.progress || 50
-      } else if (status === 'generating_video') {
-        statusMessage.value = '正在合成最終影片...'
-        progress.value = response.data.progress || 75
-      } else if (status === 'completed') {
-        clearInterval(interval)
+      const serverProgress = Number(response.data.progress) || 0
+
+      if (status === 'completed') {
+        clearInterval(pollTimer); pollTimer = null
         progress.value = 100
         result.value = response.data
-        setTimeout(() => {
-          currentStep.value = 6
-        }, 500)
-      } else if (status === 'failed') {
-        clearInterval(interval)
-        alert('處理失敗：' + response.data.error)
-        currentStep.value = 1
+        clearPersist()
+        setTimeout(() => { currentStep.value = 6 }, 500)
+        return
       }
+      if (status === 'failed') {
+        clearInterval(pollTimer); pollTimer = null
+        alert('處理失敗：' + (response.data.error || '未知錯誤'))
+        currentStep.value = 4
+        return
+      }
+
+      statusMessage.value = STATUS_TEXT[status] || '處理中…'
+      // 以「後端進度」與「該階段下限」取較大值，且永不低於目前顯示值（不倒退）
+      const target = Math.max(serverProgress, STATUS_FLOOR[status] || 0)
+      if (target > progress.value) progress.value = Math.min(target, 99)
     } catch (error) {
       console.error('查詢進度失敗:', error)
     }
-  }, 3000)
+  }, 2000)
 }
 
 const reset = () => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  clearPersist()
   currentStep.value = 1
   storyMode.value = 'warm'
   dogName.value = ''
@@ -496,6 +607,7 @@ const reset = () => {
   videos.value = []
   endingImage.value = null
   imagePreview.value = ''
+  endingUploaded.value = false
   result.value = null
   progress.value = 0
 }
@@ -807,6 +919,43 @@ h2 {
   font-size: 0.75rem;
   margin: 0;
 }
+
+.video-num.done { background: #4caf50; }
+.video-num.error { background: #f44336; }
+.video-num.uploading { background: #ff9800; }
+
+.st { font-weight: 600; }
+.st.up { color: #ff9800; }
+.st.ok { color: #4caf50; }
+.st.err { color: #f44336; }
+
+.mini-progress {
+  height: 5px;
+  background: #e6e9f5;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-top: 0.35rem;
+}
+
+.mini-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  transition: width 0.25s;
+}
+
+.btn-retry {
+  background: #ff9800;
+  color: white;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.btn-retry:hover { background: #f57c00; }
 
 .upload-hint {
   text-align: center;
