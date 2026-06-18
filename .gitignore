@@ -15,6 +15,7 @@ tmp_rovodev_*
 
 # Environment
 .env
+.env.bak*
 
 # IDE
 .vscode/
