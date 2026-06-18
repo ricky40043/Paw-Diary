@@ -153,10 +153,10 @@
           <button @click="currentStep = 1" class="btn-secondary">上一步</button>
           <button
             @click="currentStep = 3"
-            :disabled="!canProceedStep2"
+            :disabled="videoCount < 1"
             class="btn-primary"
           >
-            {{ inFlightCount > 0 ? `上傳中…（剩 ${inFlightCount}）` : '下一步' }}
+            下一步<span v-if="inFlightCount > 0">（{{ inFlightCount }} 支上傳中）</span>
           </button>
         </div>
       </div>
@@ -194,10 +194,10 @@
           <button @click="currentStep = 2" class="btn-secondary">上一步</button>
           <button
             @click="currentStep = 4"
-            :disabled="!endingUploaded || uploadingImage"
+            :disabled="!imageSelected"
             class="btn-primary"
           >
-            {{ uploadingImage ? '上傳中...' : '下一步' }}
+            下一步<span v-if="uploadingImage">（圖片上傳中）</span>
           </button>
         </div>
       </div>
@@ -220,15 +220,25 @@
           <p v-if="ownerMessage.length === 0" class="error-hint">請輸入給狗狗的話</p>
           <p v-else-if="ownerMessage.length < 10" class="error-hint">至少輸入 10 個字</p>
         </div>
-        
+
+        <!-- 按下開始製作後，若還在上傳就顯示狀態，完成後自動開始（不會卡住操作） -->
+        <div v-if="finalizing" class="upload-wait">
+          <div class="spinner small"></div>
+          <p v-if="inFlightCount > 0 || uploadingImage">
+            📤 影片上傳中，完成後會自動開始製作…<br>
+            <span class="hint">影片 {{ doneCount }}/{{ videoCount }} 已上傳{{ uploadingImage ? '、結尾圖上傳中' : '' }}</span>
+          </p>
+          <p v-else>✅ 上傳完成，正在開始製作…</p>
+        </div>
+
         <div class="actions">
-          <button @click="currentStep = 3" class="btn-secondary">上一步</button>
-          <button 
-            @click="submitOwnerMessage" 
-            :disabled="!canSubmitMessage || submittingMessage"
+          <button @click="currentStep = 3" class="btn-secondary" :disabled="finalizing">上一步</button>
+          <button
+            @click="submitOwnerMessage"
+            :disabled="!canSubmitMessage || finalizing"
             class="btn-primary"
           >
-            {{ submittingMessage ? '處理中...' : '開始生成影片' }}
+            {{ finalizing ? (inFlightCount > 0 || uploadingImage ? '上傳中…' : '開始製作…') : '開始製作影片' }}
           </button>
         </div>
       </div>
@@ -296,10 +306,11 @@ const imageInput = ref(null)
 const uploadingImage = ref(false)
 const imageProgress = ref(0)
 const endingUploaded = ref(false)
+const imageSelected = ref(false) // 已選圖片（即使還在上傳也可進下一步）
 
 // Step 4: 留言
 const ownerMessage = ref('')
-const submittingMessage = ref(false)
+const finalizing = ref(false) // 按下開始製作後，等待上傳完成→開始製作的過渡狀態
 
 // 專案
 const projectId = ref('')
@@ -387,6 +398,7 @@ const restore = async () => {
   storyMode.value = snap.storyMode || 'warm'
   ownerMessage.value = snap.ownerMessage || ''
   endingUploaded.value = !!snap.endingUploaded
+  imageSelected.value = !!snap.endingUploaded
 
   // 以伺服器實際擁有的影片為準（避免顯示已被刪除的）
   const serverIds = new Set((server.videos || []).map(v => v.id))
@@ -606,6 +618,7 @@ const handleImageSelect = async (event) => {
   const file = event.target.files[0]
   event.target.value = ''
   if (!file) return
+  imageSelected.value = true
   imagePreview.value = URL.createObjectURL(file)
   endingUploaded.value = false
   uploadingImage.value = true
@@ -637,22 +650,45 @@ const removeImage = () => {
   endingImage.value = null
   imagePreview.value = ''
   endingUploaded.value = false
+  imageSelected.value = false
 }
 
+// 等待所有上傳（影片佇列 + 結尾圖）完成；期間畫面會顯示「上傳中」。
+const waitForUploads = () => new Promise((resolve) => {
+  const check = () => {
+    if (inFlightCount.value === 0 && !uploadingImage.value) resolve()
+    else setTimeout(check, 400)
+  }
+  check()
+})
+
 const submitOwnerMessage = async () => {
-  if (!canSubmitMessage.value) return
-  submittingMessage.value = true
+  if (!canSubmitMessage.value || finalizing.value) return
+  finalizing.value = true
   try {
+    // 1) 先存留言（不需等上傳）
     await axios.post(`/api/v2/story/projects/${projectId.value}/owner-message`, {
       message: ownerMessage.value
     })
+    // 2) 等所有上傳完成（若早就傳完，這裡幾乎是瞬間）
+    await waitForUploads()
+    // 3) 驗證上傳結果，有問題就提示返回對應步驟重試
+    if (doneCount.value < 1) {
+      alert('影片尚未成功上傳，請返回步驟 2 確認或重試')
+      return
+    }
+    if (!endingUploaded.value) {
+      alert('結尾圖片尚未成功上傳，請返回步驟 3 重試')
+      return
+    }
+    // 4) 開始製作
     await axios.post(`/api/v2/story/projects/${projectId.value}/generate`)
     currentStep.value = 5
     pollProgress()
   } catch (error) {
     alert('提交失敗：' + (error.response?.data?.error || error.message))
   } finally {
-    submittingMessage.value = false
+    finalizing.value = false
   }
 }
 
@@ -1267,6 +1303,26 @@ h2 {
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 2rem auto;
+}
+
+.spinner.small {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+  border-top-width: 3px;
+  margin: 0 auto 0.5rem auto;
+}
+
+.upload-wait {
+  margin: 0.5rem 0 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: #f3f6ff;
+  border: 1px solid #d9e2ff;
+  text-align: center;
+  color: #44506b;
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 @keyframes spin {
