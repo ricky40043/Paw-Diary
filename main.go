@@ -68,6 +68,7 @@ type VideoInfo struct {
 	Analyzed     bool        `json:"analyzed"`
 	Segments     []Segment   `json:"segments,omitempty"`
 	Highlights   []Highlight `json:"highlights,omitempty"`
+	Analysis     *Analysis   `json:"analysis,omitempty"` // 整支影片的視覺分析（劇本據此寫對白，確保貼合畫面）
 }
 
 type chunkUploadState struct {
@@ -1061,7 +1062,7 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
   "has_human": true/false,
   "interaction_type": "running_towards_owner" | "playing" | "being_petted" | "fetching" | "cuddling" | "none",
   "emotion": "happy" | "excited" | "calm" | "neutral" | "sad",
-  "short_caption": "用中文簡短描述畫面中真正看得到的內容（15字以內）"
+  "short_caption": "用中文具體描述畫面真正看得到的內容（30字以內）：狗狗在哪裡、在做什麼；若有人，人正在做什麼（例如『狗狗坐在媽媽腿上，媽媽在看手機』『狗狗在草地上奔跑』）"
 }
 
 ⚠️ 最重要的規則——禁止腦補：
@@ -1078,7 +1079,7 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
     • playing：狗明顯在玩但不屬上述具體互動。
     • 只要不確定，就填 "none"，不要硬選一個。
 - emotion：依狗的表情/姿態判斷，看不出來就填 "neutral"。
-- short_caption：只描述畫面真正看得到的主體與動作。**不要提到畫面中沒出現的身體部位或動作**（例如沒看到尾巴就不要寫尾巴、沒看到摸抱就不要寫摸或抱）。
+- short_caption：用一句話「具體」描述真正看得到的：狗狗在哪、在做什麼；有人的話人在做什麼。**不要提到畫面中沒出現的身體部位或動作**（沒看到尾巴就不要寫尾巴、沒看到摸抱就不要寫摸或抱）。要寫成可以直接還原畫面的句子。
 
 **重要**：這些圖片來自同一個完整影片，請綜合所有圖片判斷；以「整支影片都看得到的事實」為準。
 
@@ -1540,11 +1541,50 @@ func analyzeVideo(project *Project, videoIndex int) error {
 	projectsMutex.Lock()
 	project.Videos[videoIndex].Segments = segments
 	project.Videos[videoIndex].Highlights = highlights
+	project.Videos[videoIndex].Analysis = analysis // 保留整支影片分析供劇本使用（不受 highlight 有無影響）
 	project.Videos[videoIndex].Analyzed = true
 	projectsMutex.Unlock()
 
 	log.Printf("Analyzed video %s: %d segments, %d highlights", video.ID, len(segments), len(highlights))
 	return nil
+}
+
+// interactionDesc 把視覺分析的 interaction_type 轉成給劇本模型的「事實白話」，
+// 重點是當沒有肢體互動時，明確講出「沒有摸、也沒有抱」，杜絕對白腦補。
+func interactionDesc(interactionType string, hasHuman bool) string {
+	switch interactionType {
+	case "being_petted":
+		return "有人的手在摸狗狗"
+	case "cuddling":
+		return "有人用手臂抱著狗狗"
+	case "fetching":
+		return "狗狗在撿球或叼著東西"
+	case "running_towards_owner":
+		return "狗狗朝著人奔跑過去"
+	case "playing":
+		return "狗狗在玩耍（沒有特別的摸或抱）"
+	default: // none / 空 / 未知
+		if hasHuman {
+			return "畫面中有人，但兩者沒有肢體互動（沒有摸，也沒有抱，請勿寫成被摸或被抱）"
+		}
+		return "畫面中只有狗狗、沒有人（請勿寫成被摸、被抱或有人陪在身邊）"
+	}
+}
+
+// emotionDesc 把情緒轉成白話；neutral 回空字串表示「不特別標註情緒」。
+func emotionDesc(emotion string) string {
+	switch emotion {
+	case "happy":
+		return "開心"
+	case "excited":
+		return "興奮"
+	case "calm":
+		return "放鬆平靜"
+	case "sad":
+		return "落寞"
+	default:
+		return ""
+	}
 }
 
 // 有ＡＩ
@@ -1557,23 +1597,27 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		dogBreed = "狗狗"
 	}
 
-	// 為「每一支影片」建立一行描述（用 AI 視覺分析的 caption/emotion）。
-	// 對白會「一支影片一段、依序對應」，且必須緊扣該片描述，避免文字與畫面對不上。
+	// 為「每一支影片」建立一行「事實描述」，直接取用整支影片的視覺分析
+	// （畫面內容 + 有沒有肢體互動 + 情緒），讓對白只能依事實寫、不會腦補出摸/抱或不相干場景。
 	videoDescriptions := []string{}
 	for i, video := range project.Videos {
-		caption := "與狗狗相處的溫馨畫面"
-		emotion := ""
-		if len(video.Highlights) > 0 {
-			if video.Highlights[0].Caption != "" {
-				caption = video.Highlights[0].Caption
-			}
-			emotion = video.Highlights[0].Emotion
+		var caption, interaction, emotion string
+		if a := video.Analysis; a != nil {
+			caption = strings.TrimSpace(a.ShortCaption)
+			interaction = interactionDesc(a.InteractionType, a.HasHuman)
+			emotion = emotionDesc(a.Emotion)
 		}
+		if caption == "" {
+			caption = "（畫面內容不明確，請保守描述，不要假設任何具體動作）"
+		}
+		if interaction == "" {
+			interaction = "未知，請保守，不要假設有摸、抱或特定場景"
+		}
+		line := fmt.Sprintf("影片 %d：畫面＝%s；互動＝%s", i, caption, interaction)
 		if emotion != "" {
-			videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d：%s（狗狗情緒：%s）", i, caption, emotion))
-		} else {
-			videoDescriptions = append(videoDescriptions, fmt.Sprintf("影片 %d：%s", i, caption))
+			line += "；情緒＝" + emotion
 		}
+		videoDescriptions = append(videoDescriptions, line)
 	}
 
 	if len(videoDescriptions) == 0 {
@@ -1625,9 +1669,13 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 第 0 段對應「影片 0」、第 1 段對應「影片 1」，以此類推。
 
 🚨 最重要的規則（務必遵守，否則文字會跟畫面對不上）：
-- 每一段「只能描述該編號影片裡實際出現的畫面與動作」。
-- 嚴禁虛構描述裡沒提到的場景或動作。例如描述沒提到「門口、散步、睡覺、奔跑」，就絕對不要寫。
-- 若描述是「在車內被抱著」，就寫被抱著、靠在身上、吐舌的感覺，不要寫成在外面跑跳。
+- 每一段「只能根據該編號影片的『畫面＝…』與『互動＝…』來寫」，不可超出。
+- 嚴禁虛構描述裡沒提到的場景或動作。描述沒提到的（門口、散步、睡覺、奔跑、看手機…）就絕對不要寫。
+- 「互動」最重要，務必照著寫：
+    • 互動寫「沒有摸、也沒有抱」→ 對白就**絕對不能出現**被摸、被抱、摸摸、抱抱等字眼，改寫成「靜靜待在一起／坐在旁邊／陪著」這類符合畫面的內容。
+    • 互動寫「只有狗狗、沒有人」→ 不要寫成有人陪、被摸、被抱、看著媽媽。
+    • 互動寫「狗狗在奔跑／玩耍」→ 就寫跑跳玩耍的開心，不要硬凹成被抱在懷裡。
+- 寧可寫得樸素、貼近畫面，也不要為了感人而編造沒發生的親密互動。
 
 其他要求：
 1. 用「我」稱呼自己，用「%s」稱呼對方；口吻單純直接、像小孩講話、有情緒層次。
