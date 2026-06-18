@@ -1991,10 +1991,14 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 	   - 可以帶一點撒嬌或俏皮，但整體要穩定、真誠、讓人覺得被好好抱住。
 	   - 根據當前模式維持風格：%s。
 
-	2. 內容：
-	   - 不要解釋或重複「你剛剛說了什麼」，直接表達對她的愛和感謝
-	   - 可以簡單提到 1 個具體回憶或感受
-	   - 表達你對她的愛、感激和陪伴
+	2. 內容（這是最重要的一段，務必做到）：
+	   - **務必真正「回應」%s 剛剛說的話**：把她提到的具體片段、心情或願望接住並回應她。
+	     例如她說「回家時你衝過來迎接」→ 就回應這個畫面；說「想念你的陪伴」→ 回應你會一直陪著她；
+	     說「永遠記得你」→ 回應你也永遠記得她。不要只講通用的「我愛你、謝謝你」。
+	   - **若她的話裡有離別的情緒**（例如：到旺星球、彩虹橋、想念、再也、好想你、永遠記得…），
+	     你就是從「她看不到的地方／遠方」溫柔地安慰她：你一直都在她身邊、要她別太難過、
+	     謝謝她用一生愛你；語氣要不捨但溫暖，像在輕輕抱住她，讓她安心。
+	   - 自然帶出 1～2 個你們之間的具體回憶或感受，讓她真的覺得「你把她的話聽進去了」。
 
 	3. 字數與句子：
 	   - **重要！！！嚴格控制在 80-100 個中文字之間**
@@ -2028,7 +2032,8 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 		ownerTitle,
 		toneInstruction,
 		modeEmotion,
-		ownerTitle,
+		ownerTitle, // 2. 內容：「務必真正回應 %s 剛剛說的話」
+		ownerTitle, // 4. 稱呼：回應中要直接叫「%s」至少一次
 		modeExamples,
 		modeFinalInstruction)
 
@@ -2050,7 +2055,7 @@ func generateDogResponse(project *Project, story *Story) (string, error) {
 				},
 			},
 		},
-		"temperature": 0.9,
+		"temperature": 0.75, // 略降：保留情感溫度，但更貼著主人實際說的話、不亂飄
 		"max_tokens":  2000,
 	}
 
