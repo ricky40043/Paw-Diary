@@ -97,12 +97,12 @@
         <label
           for="videoInput"
           class="video-drop-zone"
-          :class="{ disabled: videoCount >= 10 }"
-          :style="videoCount >= 10 ? 'pointer-events: none' : 'cursor: pointer'"
+          :class="{ disabled: videoCount >= MAX_VIDEOS }"
+          :style="videoCount >= MAX_VIDEOS ? 'pointer-events: none' : 'cursor: pointer'"
         >
-          <div class="icon">{{ videoCount >= 10 ? '✅' : '🎬' }}</div>
+          <div class="icon">{{ videoCount >= MAX_VIDEOS ? '✅' : '🎬' }}</div>
           <p>
-            <span v-if="videoCount >= 10">已達上限 10 個</span>
+            <span v-if="videoCount >= MAX_VIDEOS">已達上限 10 個</span>
             <span v-else-if="videoCount === 0">點擊選擇影片</span>
             <span v-else>已選 {{ videoCount }} 個，點擊繼續新增</span>
           </p>
@@ -295,6 +295,7 @@ const relations = ['爸爸', '媽媽', '哥哥', '姊姊', '弟弟', '妹妹', '
 
 // Step 2: 影片（每支獨立狀態，選完即自動上傳）
 // 每筆：{ key, id, name, size, status: 'uploading'|'done'|'error', progress, error, file }
+const MAX_VIDEOS = 10 // 影片數量上限（單一來源，UI 與選檔邏輯共用，避免兩處不同步）
 const videos = ref([])
 const videoInput = ref(null)
 const addingVideo = ref(false)
@@ -550,7 +551,7 @@ const handleVideoSelect = (event) => {
   const seen = new Set(videos.value.map(v => v.name + v.size))
   for (const f of newFiles) {
     const key = f.name + f.size
-    if (!seen.has(key) && videos.value.length < 5) {
+    if (!seen.has(key) && videos.value.length < MAX_VIDEOS) {
       seen.add(key)
       // 先排入佇列（等待中），由 processUploadQueue 一支一支上傳
       videos.value.push({ key: key + Math.random().toString(36).slice(2), id: '', name: f.name, size: f.size, status: 'pending', progress: 0, error: '', file: f })
