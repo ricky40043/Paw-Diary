@@ -1571,6 +1571,28 @@ func interactionDesc(interactionType string, hasHuman bool) string {
 	}
 }
 
+// perClipDuration 依影片數量決定每支要剪多長：
+// 總片段時長盡量壓在 ~120 秒內，每段 12~15 秒；只有 1 支時放寬到 20 秒。
+// 例：1 支→20s、2~8 支→15s、9 支→~13s、10 支→12s（加結尾圖約最長 130s、最短 30s）。
+func perClipDuration(numVideos int) float64 {
+	const maxTotal = 120.0
+	if numVideos <= 0 {
+		return 15.0
+	}
+	maxPer := 15.0
+	if numVideos == 1 {
+		maxPer = 20.0
+	}
+	per := maxTotal / float64(numVideos)
+	if per > maxPer {
+		per = maxPer
+	}
+	if per < 12.0 {
+		per = 12.0
+	}
+	return per
+}
+
 // emotionDesc 把情緒轉成白話；neutral 回空字串表示「不特別標註情緒」。
 func emotionDesc(emotion string) string {
 	switch emotion {
@@ -1665,8 +1687,12 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 下面是這次要做成影片的片段，每一行是「一支影片」的實際畫面描述（依序編號）：
 %s
 
-請替「狗狗本人」寫出正好 %d 段對白，一支影片一段、順序與上面完全一致：
-第 0 段對應「影片 0」、第 1 段對應「影片 1」，以此類推。
+請替「狗狗本人」寫出正好 %d 段對白，每一支影片寫一段（每支影片用到剛好一次）。
+
+🎬 你可以自由決定 chapters 的「播放順序」來營造最好的情緒節奏：
+- 活潑、有趣、精彩、好笑的片段放「前面」當開場；
+- 溫馨、感人、平靜、深情的片段放「後面」壓軸收尾。
+- 每段的 narration 必須對應它自己的 video_index 的「畫面＝…／互動＝…」，重排的是「順序」，不是內容。
 
 🚨 最重要的規則（務必遵守，否則文字會跟畫面對不上）：
 - 每一段「只能根據該編號影片的『畫面＝…』與『互動＝…』來寫」，不可超出。
@@ -1686,18 +1712,18 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 風格示意（只參考語氣與情緒，不要照抄）：
 %s
 
-請用「嚴格 JSON」回應，chapters 必須正好 %d 段，video_index 依序為 0,1,2…：
+請用「嚴格 JSON」回應，chapters 必須正好 %d 段，依你安排的「播放順序」由前到後排列：
 
 {
   "title": "給%s的悄悄話",
   "chapters": [
-    {"narration": "對應影片0的對白", "video_index": 0, "highlight_index": 0},
-    {"narration": "對應影片1的對白", "video_index": 1, "highlight_index": 0}
+    {"narration": "這一段對應的影片對白", "video_index": 0, "highlight_index": 0},
+    {"narration": "下一段對應的影片對白", "video_index": 2, "highlight_index": 0}
   ]
 }
 
 注意：
-- chapters 數量必須「正好等於 %d」，video_index 從 0 連續編到 %d，不可跳號或超出。
+- chapters 數量必須「正好等於 %d」；video_index 是 0~%d，每一個都要用到、且只用一次（順序可任意安排，但不可重複或漏掉）。
 - 只回傳 JSON，不要任何註解、markdown 或多餘文字。`,
 		project.DogName,
 		dogBreed,
@@ -1805,39 +1831,70 @@ func generateStoryWithAI(project *Project) (*Story, error) {
 		Chapters: []StoryChapter{},
 	}
 
-	for i, ch := range storyResponse.Chapters {
-		if ch.VideoIndex >= len(project.Videos) {
-			log.Printf("Warning: chapter %d video_index %d >= videos length %d, skipping",
-				i, ch.VideoIndex, len(project.Videos))
+	numVideos := len(project.Videos)
+	clipLen := perClipDuration(numVideos)
+
+	// 1) 取出 AI 安排的「播放順序」與每支影片的對白（過濾無效 index、去重保留首次）
+	narrationByVideo := make(map[int]string)
+	order := []int{}
+	seen := make(map[int]bool)
+	for _, ch := range storyResponse.Chapters {
+		if ch.VideoIndex < 0 || ch.VideoIndex >= numVideos {
 			continue
 		}
-		video := project.Videos[ch.VideoIndex]
+		if _, ok := narrationByVideo[ch.VideoIndex]; !ok {
+			narrationByVideo[ch.VideoIndex] = strings.TrimSpace(ch.Narration)
+		}
+		if !seen[ch.VideoIndex] {
+			seen[ch.VideoIndex] = true
+			order = append(order, ch.VideoIndex)
+		}
+	}
+	// 2) 防呆：AI 若漏掉某支影片，補到最後（依上傳順序），確保每支都用到剛好一次
+	for idx := 0; idx < numVideos; idx++ {
+		if !seen[idx] {
+			log.Printf("Story: video %d 未被 AI 排入，補到結尾", idx)
+			order = append(order, idx)
+		}
+	}
+	log.Printf("Story playback order (by video index): %v, clip length=%.1fs", order, clipLen)
 
-		// 如果沒有 highlights 或 highlight_index 超出範圍，使用整個影片
-		var startTime, endTime float64
-		if len(video.Highlights) > 0 && ch.HighlightIndex < len(video.Highlights) {
-			highlight := video.Highlights[ch.HighlightIndex]
-			startTime = highlight.Start
-			endTime = highlight.End
-		} else {
-			// 沒有 highlights，使用影片前 15 秒
-			startTime = 0
-			endTime = 15.0
-			if video.Duration > 0 && video.Duration < 15.0 {
-				endTime = video.Duration
+	// 3) 依最終順序建立章節；每段剪 clipLen 秒（有互動 highlight 就從該處開始）
+	for pos, vIdx := range order {
+		video := project.Videos[vIdx]
+
+		startTime := 0.0
+		if len(video.Highlights) > 0 {
+			startTime = video.Highlights[0].Start
+		}
+		endTime := startTime + clipLen
+		if video.Duration > 0 && endTime > video.Duration {
+			endTime = video.Duration
+			if endTime-startTime < clipLen { // 尾端不夠就往前挪，盡量取滿
+				startTime = endTime - clipLen
+				if startTime < 0 {
+					startTime = 0
+				}
 			}
-			log.Printf("Using full video duration for chapter %d: 0 to %.2f", i+1, endTime)
 		}
 
-		chapter := StoryChapter{
-			Index:     i + 1,
-			Narration: ch.Narration,
+		narration := narrationByVideo[vIdx]
+		if narration == "" { // 極少數：AI 沒給這支對白 → 用畫面描述做樸實 fallback
+			if video.Analysis != nil && strings.TrimSpace(video.Analysis.ShortCaption) != "" {
+				narration = video.Analysis.ShortCaption
+			} else {
+				narration = "和你在一起的時光，我都記得。"
+			}
+		}
+
+		story.Chapters = append(story.Chapters, StoryChapter{
+			Index:     pos + 1,
+			Narration: narration,
 			VideoID:   video.ID,
 			StartTime: startTime,
 			EndTime:   endTime,
 			Duration:  endTime - startTime,
-		}
-		story.Chapters = append(story.Chapters, chapter)
+		})
 	}
 
 	log.Printf("Generated story with %d chapters", len(story.Chapters))
@@ -2538,7 +2595,7 @@ func createEndingSegment(project *Project, outputPath string) error {
 	if project.EndingImage == "" {
 		return fmt.Errorf("no ending image")
 	}
-	endingDuration := 8.0 // 結尾 8 秒
+	endingDuration := 10.0 // 結尾 10 秒（多 2 秒，讓最後一張照片停留久一點）
 
 	dogText := strings.TrimSpace(strings.ReplaceAll(project.Story.DogResponse, "\n\n", "\n"))
 
@@ -2594,7 +2651,8 @@ func createEndingSegment(project *Project, outputPath string) error {
 		))
 	}
 
-	fadePart := fmt.Sprintf("fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=0.5,format=yuv420p", endingDuration-0.5)
+	// 結尾最後 2 秒整個畫面淡入黑，收尾更乾淨（與背景音樂的尾段淡出大致同步）。
+	fadePart := fmt.Sprintf("fade=t=in:st=0:d=0.5,fade=t=out:st=%.1f:d=2.0,format=yuv420p", endingDuration-2.0)
 	endingVF := baseVF
 	if len(dtParts) > 0 {
 		endingVF += "," + strings.Join(dtParts, ",")
@@ -3508,15 +3566,18 @@ func addBackgroundMusic(project *Project, inputVideo, outputVideo string) error 
 		}
 	}
 
-	// 主片已無音軌，背景音樂為唯一音軌，並在最後 3 秒淡出。
+	// 主片已無音軌，背景音樂為唯一音軌，並在結尾「平順淡出」（與影片淡黑同步收尾），
+	// 而不是突然消失。BGM 比影片長，配合 -shortest 切到影片長度，淡出剛好結束在片尾。
 	// 影片直接 -c:v copy（不重新編碼），只編碼音訊，速度極快。
 	videoDuration := getVideoDuration(inputVideo)
-	fadeStartTime := videoDuration - 3.0
+	const musicFadeOut = 6.0 // 結尾 6 秒漸弱
+	fadeStartTime := videoDuration - musicFadeOut
 	if fadeStartTime < 0 {
 		fadeStartTime = 0
 	}
 
-	filterComplex := fmt.Sprintf("[1:a]volume=1.0,afade=t=out:st=%.2f:d=3[aout]", fadeStartTime)
+	// volume 0.85：背景音樂略收斂；afade 6 秒：尾段緩緩減弱不突兀。
+	filterComplex := fmt.Sprintf("[1:a]volume=0.85,afade=t=out:st=%.2f:d=%.2f[aout]", fadeStartTime, musicFadeOut)
 	log.Printf("Audio filter: %s (video duration: %.2fs, fade start: %.2fs)", filterComplex, videoDuration, fadeStartTime)
 
 	cmd := exec.Command("ffmpeg",

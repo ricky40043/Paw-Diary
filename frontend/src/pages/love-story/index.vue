@@ -91,22 +91,22 @@
       <!-- Step 2: 上傳影片 -->
       <div v-if="currentStep === 2" class="step-card">
         <h2>步驟 2：上傳影片</h2>
-        <p class="hint">選擇 1～5 個與狗狗互動的溫馨片段，<strong>選好就會自動上傳</strong>，每個影片會被剪輯成約 15 秒</p>
+        <p class="hint">選擇 1～10 個與狗狗互動的溫馨片段，<strong>選好就會自動上傳</strong>，每段會被剪輯成約 12～20 秒（影片越多每段越短，總長控制在約 2 分鐘內）</p>
 
         <!-- 選擇區：用 label 觸發 input，iOS Safari 相容性最佳 -->
         <label
           for="videoInput"
           class="video-drop-zone"
-          :class="{ disabled: videoCount >= 5 }"
-          :style="videoCount >= 5 ? 'pointer-events: none' : 'cursor: pointer'"
+          :class="{ disabled: videoCount >= 10 }"
+          :style="videoCount >= 10 ? 'pointer-events: none' : 'cursor: pointer'"
         >
-          <div class="icon">{{ videoCount >= 5 ? '✅' : '🎬' }}</div>
+          <div class="icon">{{ videoCount >= 10 ? '✅' : '🎬' }}</div>
           <p>
-            <span v-if="videoCount >= 5">已達上限 5 個</span>
+            <span v-if="videoCount >= 10">已達上限 10 個</span>
             <span v-else-if="videoCount === 0">點擊選擇影片</span>
             <span v-else>已選 {{ videoCount }} 個，點擊繼續新增</span>
           </p>
-          <p class="small">可一次多選，最多 5 個</p>
+          <p class="small">可一次多選，最多 10 個</p>
         </label>
         <input
           id="videoInput"
