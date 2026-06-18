@@ -1054,31 +1054,40 @@ func analyzeVideoWithAI(framePaths []string, videoID string) (*Analysis, error) 
 				"content": []map[string]interface{}{
 					{
 						"type": "text",
-						"text": fmt.Sprintf(`這些是來自同一個影片的 %d 張連續截圖（每隔 2 秒一張）。請綜合分析整個影片，判斷以下內容並以 JSON 格式回應：
+						"text": fmt.Sprintf(`這些是來自同一個影片的 %d 張連續截圖（每隔 2 秒一張）。請**只根據畫面中清楚可見的事物**，綜合分析整個影片，並以 JSON 格式回應：
 
 {
   "has_dog": true/false,
   "has_human": true/false,
   "interaction_type": "running_towards_owner" | "playing" | "being_petted" | "fetching" | "cuddling" | "none",
   "emotion": "happy" | "excited" | "calm" | "neutral" | "sad",
-  "short_caption": "用中文簡短描述這個影片的主要內容（15字以內）"
+  "short_caption": "用中文簡短描述畫面中真正看得到的內容（15字以內）"
 }
 
-判斷標準：
-- has_dog: 影片中是否有狗
-- has_human: 影片中是否有人
-- interaction_type: 狗和人之間的主要互動類型
-- emotion: 狗的整體情緒
-- short_caption: 簡短描述影片內容
+⚠️ 最重要的規則——禁止腦補：
+- 只描述「畫面中清楚看得到」的東西。看不到、不確定的，一律不要寫、不要假設。
+- 不要因為這是「寵物溫馨影片」就腦補出沒發生的互動或情感。寧可保守，也不要誇大。
 
-**重要**：這些圖片來自同一個完整影片，請綜合所有圖片進行分析。
+各欄位判斷標準（從嚴）：
+- has_human：只有當畫面真的出現「人」（人臉、手、身體任一部位）才填 true；只有狗就填 false。
+- interaction_type：必須有「明確視覺證據」才可填對應互動，否則一律填 "none"：
+    • being_petted（被摸）：要能看到「人的手實際接觸到狗」。沒看到手或沒接觸 → 不可填，改 "none"。
+    • cuddling（被抱）：要能看到「人的手臂環抱住狗」。沒看到擁抱動作 → 不可填，改 "none"。
+    • fetching（撿球/叼東西）：要能看到「狗嘴裡叼著或正在追球/物件」。
+    • running_towards_owner：要能看到「狗朝鏡頭/人奔跑」。
+    • playing：狗明顯在玩但不屬上述具體互動。
+    • 只要不確定，就填 "none"，不要硬選一個。
+- emotion：依狗的表情/姿態判斷，看不出來就填 "neutral"。
+- short_caption：只描述畫面真正看得到的主體與動作。**不要提到畫面中沒出現的身體部位或動作**（例如沒看到尾巴就不要寫尾巴、沒看到摸抱就不要寫摸或抱）。
+
+**重要**：這些圖片來自同一個完整影片，請綜合所有圖片判斷；以「整支影片都看得到的事實」為準。
 
 只回傳 JSON，不要其他文字。`, len(base64Images)),
 					},
 				},
 			},
 		},
-		"temperature": 0.4,
+		"temperature": 0.1, // 低溫度：讓視覺判斷更貼近畫面事實、減少腦補誇大
 		"max_tokens":  2000,
 	}
 
