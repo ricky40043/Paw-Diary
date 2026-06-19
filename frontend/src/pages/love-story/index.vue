@@ -37,7 +37,7 @@
             <a :href="item.url" :download="`${item.name}回憶錄.mp4`" class="history-open dl">⬇</a>
             <button v-if="!item.server" type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
           </div>
-          <p class="history-hint">{{ account.username ? '這些影片綁在你的帳號，換手機/電腦登入都看得到' : '這些連結存在你的手機，滑掉或關掉都還能回來開／下載' }}</p>
+          <p class="history-hint">{{ account.username ? '✅ 這些影片已綁在你的帳號，換手機 / 電腦登入都看得到' : '影片檔都存在伺服器；只是「哪些是你做的」目前只記在這台裝置。登入就會綁進帳號，換裝置也看得到。' }}</p>
         </div>
 
         <!-- 登入 / 註冊彈窗 -->
@@ -368,12 +368,16 @@ const authPassword = ref('')
 const authError = ref('')
 const authLoading = ref(false)
 
-const localIds = () => videoHistory.value.map(v => v.id).filter(Boolean)
+// 本機紀錄轉成認領用的完整資料（含名稱與時間，讓伺服器能補建舊影片紀錄）
+const localItems = () => videoHistory.value.filter(v => v.id).map(v => ({ id: v.id, name: v.name, ts: v.ts }))
 
-// 登入＝顯示伺服器影片（跨裝置）；未登入＝顯示本機紀錄
+// 登入＝伺服器影片（跨裝置）＋ 尚未同步到伺服器的本機影片（合併，避免任何影片消失）
 const displayVideos = computed(() => {
   if (account.value.username) {
-    return accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, server: true }))
+    const server = accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, server: true }))
+    const serverIds = new Set(server.map(v => v.id))
+    const localOnly = videoHistory.value.filter(v => !serverIds.has(v.id))
+    return [...server, ...localOnly]
   }
   return videoHistory.value
 })
@@ -386,7 +390,7 @@ const doAuth = async () => {
   try {
     // 登入/註冊時把本機做過的影片 id 一起送上去認領
     const res = await axios.post(`/api/account/${authMode.value}`, {
-      username: authUsername.value, password: authPassword.value, claim_ids: localIds()
+      username: authUsername.value, password: authPassword.value, claim_items: localItems()
     })
     account.value = { token: res.data.token, username: res.data.username }
     localStorage.setItem(ACCOUNT_KEY, JSON.stringify(account.value))
@@ -418,7 +422,7 @@ const logout = () => {
 const claimIfLoggedIn = async (id) => {
   if (!account.value.token || !id) return
   try {
-    await axios.post('/api/account/claim', { ids: [id] }, { headers: { 'X-Auth-Token': account.value.token } })
+    await axios.post('/api/account/claim', { items: [{ id, name: dogName.value, ts: Date.now() }] }, { headers: { 'X-Auth-Token': account.value.token } })
     await loadAccountVideos()
   } catch (e) {}
 }
@@ -429,9 +433,9 @@ const initAccount = async () => {
     if (!saved || !saved.token) return
     account.value = saved
     await loadAccountVideos()
-    if (localIds().length) {
+    if (localItems().length) {
       try {
-        await axios.post('/api/account/claim', { ids: localIds() }, { headers: { 'X-Auth-Token': saved.token } })
+        await axios.post('/api/account/claim', { items: localItems() }, { headers: { 'X-Auth-Token': saved.token } })
         await loadAccountVideos()
       } catch (e) {}
     }
