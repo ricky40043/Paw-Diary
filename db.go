@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -60,6 +61,18 @@ CREATE TABLE IF NOT EXISTS task_videos (
 );
 CREATE INDEX IF NOT EXISTS idx_task_videos_task ON task_videos(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
+
+CREATE TABLE IF NOT EXISTS users (
+	id            TEXT PRIMARY KEY,
+	username      TEXT UNIQUE,
+	password_hash TEXT,
+	created_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+	token      TEXT PRIMARY KEY,
+	user_id    TEXT,
+	created_at TEXT
+);
 `
 
 // initDB 開啟（或建立）SQLite 並建表。失敗只記錄不中斷服務（DB 是輔助功能）。
@@ -76,6 +89,13 @@ func initDB(storageDir string) {
 		log.Printf("⚠️ DB 建表失敗: %v", err)
 		return
 	}
+	// 為既有 tasks 表補上 user_id 欄位（可空 = 匿名）；已存在會報 duplicate column，忽略即可。
+	if _, err := conn.Exec(`ALTER TABLE tasks ADD COLUMN user_id TEXT`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("note: add tasks.user_id: %v", err)
+		}
+	}
+	conn.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id)`)
 	db = conn
 	log.Printf("✅ DB ready: %s", dbPath)
 }

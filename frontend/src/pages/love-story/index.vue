@@ -13,19 +13,49 @@
 
       <!-- Step 1: 狗狗資訊與風格 -->
       <div v-if="currentStep === 1" class="step-card">
-        <!-- 我做過的影片（存在本機，永久連結，滑掉也找得到） -->
-        <div v-if="videoHistory.length" class="history-box">
-          <h3>📼 我做過的影片</h3>
-          <div v-for="item in videoHistory" :key="item.id" class="history-item">
+        <!-- 帳號列：登入可跨裝置看影片；不登入也能做 -->
+        <div class="account-bar">
+          <template v-if="account.username">
+            <span class="acc-who">👤 {{ account.username }}</span>
+            <button type="button" class="acc-btn ghost" @click="logout">登出</button>
+          </template>
+          <template v-else>
+            <span class="acc-note">登入可跨裝置看你做過的影片（不登入也能做）</span>
+            <button type="button" class="acc-btn" @click="openAuth">登入 / 註冊</button>
+          </template>
+        </div>
+
+        <!-- 我做過的影片（未登入＝存本機；登入＝跨裝置從伺服器抓） -->
+        <div v-if="displayVideos.length" class="history-box">
+          <h3>📼 我做過的影片<span v-if="account.username" class="acc-tag">已登入 · 跨裝置</span></h3>
+          <div v-for="item in displayVideos" :key="item.id" class="history-item">
             <div class="history-info">
               <span class="history-name">{{ item.name }}的回憶錄</span>
               <span class="history-date">{{ formatHistoryDate(item.ts) }}</span>
             </div>
             <a :href="item.url" target="_blank" rel="noopener" class="history-open">▶ 開啟</a>
             <a :href="item.url" :download="`${item.name}回憶錄.mp4`" class="history-open dl">⬇</a>
-            <button type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
+            <button v-if="!item.server" type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
           </div>
-          <p class="history-hint">這些連結存在你的手機，滑掉或關掉都還能回來開／下載</p>
+          <p class="history-hint">{{ account.username ? '這些影片綁在你的帳號，換手機/電腦登入都看得到' : '這些連結存在你的手機，滑掉或關掉都還能回來開／下載' }}</p>
+        </div>
+
+        <!-- 登入 / 註冊彈窗 -->
+        <div v-if="showAuth" class="modal" @click.self="showAuth = false">
+          <div class="auth-box">
+            <button class="close" @click="showAuth = false">✕</button>
+            <h2>{{ authMode === 'login' ? '登入' : '註冊新帳號' }}</h2>
+            <input v-model="authUsername" placeholder="帳號" autocapitalize="off" autocomplete="username" />
+            <input v-model="authPassword" type="password" placeholder="密碼（至少 4 碼）" autocomplete="current-password" @keyup.enter="doAuth" />
+            <p v-if="authError" class="err">{{ authError }}</p>
+            <button class="acc-btn full" @click="doAuth" :disabled="authLoading">
+              {{ authLoading ? '處理中…' : (authMode === 'login' ? '登入' : '註冊並登入') }}
+            </button>
+            <p class="switch">
+              {{ authMode === 'login' ? '還沒有帳號？' : '已經有帳號？' }}
+              <a @click="authMode = authMode === 'login' ? 'register' : 'login'; authError = ''">{{ authMode === 'login' ? '註冊一個' : '改用登入' }}</a>
+            </p>
+          </div>
         </div>
 
         <h2>步驟 1：狗狗資訊</h2>
@@ -327,6 +357,87 @@ let pollTimer = null
 const HISTORY_KEY = 'pawDiaryHistory'
 const videoHistory = ref([])
 
+// ---- 使用者帳號（可選）：登入後影片綁帳號、跨裝置可見；不登入照舊用本機 ----
+const ACCOUNT_KEY = 'pawAccount'
+const account = ref({ token: '', username: '' })
+const accountVideos = ref([])
+const showAuth = ref(false)
+const authMode = ref('login')
+const authUsername = ref('')
+const authPassword = ref('')
+const authError = ref('')
+const authLoading = ref(false)
+
+const localIds = () => videoHistory.value.map(v => v.id).filter(Boolean)
+
+// 登入＝顯示伺服器影片（跨裝置）；未登入＝顯示本機紀錄
+const displayVideos = computed(() => {
+  if (account.value.username) {
+    return accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, server: true }))
+  }
+  return videoHistory.value
+})
+
+const openAuth = () => { showAuth.value = true; authMode.value = 'login'; authError.value = '' }
+
+const doAuth = async () => {
+  if (!authUsername.value || !authPassword.value) return
+  authLoading.value = true; authError.value = ''
+  try {
+    // 登入/註冊時把本機做過的影片 id 一起送上去認領
+    const res = await axios.post(`/api/account/${authMode.value}`, {
+      username: authUsername.value, password: authPassword.value, claim_ids: localIds()
+    })
+    account.value = { token: res.data.token, username: res.data.username }
+    localStorage.setItem(ACCOUNT_KEY, JSON.stringify(account.value))
+    showAuth.value = false; authPassword.value = ''
+    await loadAccountVideos()
+  } catch (e) {
+    authError.value = e.response?.data?.error || '失敗，請再試一次'
+  } finally { authLoading.value = false }
+}
+
+const loadAccountVideos = async () => {
+  if (!account.value.token) return
+  try {
+    const res = await axios.get('/api/account/videos', { headers: { 'X-Auth-Token': account.value.token } })
+    accountVideos.value = res.data.videos || []
+  } catch (e) {
+    if (e.response?.status === 401) logout()
+  }
+}
+
+const logout = () => {
+  if (account.value.token) axios.post('/api/account/logout', {}, { headers: { 'X-Auth-Token': account.value.token } }).catch(() => {})
+  account.value = { token: '', username: '' }
+  accountVideos.value = []
+  try { localStorage.removeItem(ACCOUNT_KEY) } catch (e) {}
+}
+
+// 完成新影片時，若已登入就把它認領進帳號
+const claimIfLoggedIn = async (id) => {
+  if (!account.value.token || !id) return
+  try {
+    await axios.post('/api/account/claim', { ids: [id] }, { headers: { 'X-Auth-Token': account.value.token } })
+    await loadAccountVideos()
+  } catch (e) {}
+}
+
+const initAccount = async () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ACCOUNT_KEY) || 'null')
+    if (!saved || !saved.token) return
+    account.value = saved
+    await loadAccountVideos()
+    if (localIds().length) {
+      try {
+        await axios.post('/api/account/claim', { ids: localIds() }, { headers: { 'X-Auth-Token': saved.token } })
+        await loadAccountVideos()
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 const loadHistory = () => {
   try { videoHistory.value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch (e) { videoHistory.value = [] }
 }
@@ -419,7 +530,7 @@ const restore = async () => {
   }
 }
 
-onMounted(() => { loadHistory(); restore() })
+onMounted(() => { loadHistory(); initAccount(); restore() })
 
 // 任一關鍵狀態變動就保存（videos 不放進 watch，改在上傳完成/移除時明確 persist，
 // 避免上傳進度每跳一格就寫一次 localStorage 造成手機卡頓）
@@ -716,6 +827,7 @@ const pollProgress = () => {
         result.value = response.data
         // 存進「我的影片」永久清單（直接連結，滑掉/重新部署都還能開）
         addToHistory(projectId.value, dogName.value, response.data.final_video_url)
+        claimIfLoggedIn(projectId.value) // 已登入就同步綁進帳號（跨裝置可見）
         clearPersist()
         setTimeout(() => { currentStep.value = 6 }, 500)
         return
@@ -1164,6 +1276,24 @@ h2 {
   padding: 0.2rem 0.3rem;
 }
 .history-hint { color: #888; font-size: 0.75rem; margin: 0.5rem 0 0; }
+
+/* 帳號列 */
+.account-bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; background: #f5f3ff; border: 1px solid #e9e5ff; border-radius: 12px; padding: .6rem .8rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.acc-note { font-size: .78rem; color: #6b6b8a; }
+.acc-who { font-weight: 700; color: #4c3fb3; }
+.acc-btn { background: #667eea; color: #fff; border: 0; padding: .45rem 1rem; border-radius: 9px; font-weight: 700; cursor: pointer; font-size: .85rem; }
+.acc-btn.ghost { background: #cbd5e1; color: #334155; }
+.acc-btn.full { width: 100%; padding: .7rem; margin-top: .4rem; }
+.acc-tag { font-size: .68rem; background: #dcfce7; color: #16a34a; padding: .12rem .45rem; border-radius: 5px; margin-left: .5rem; font-weight: 700; vertical-align: middle; }
+/* 登入彈窗 */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 200; }
+.auth-box { background: #fff; border-radius: 16px; padding: 1.6rem; max-width: 340px; width: 100%; position: relative; }
+.auth-box h2 { font-size: 1.2rem; margin-bottom: 1rem; }
+.auth-box input { width: 100%; padding: .75rem; margin-bottom: .7rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; }
+.auth-box .close { position: absolute; top: .8rem; right: .8rem; border: 0; background: #f1f5f9; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+.auth-box .err { color: #dc2626; font-size: .85rem; margin-bottom: .5rem; }
+.auth-box .switch { text-align: center; font-size: .82rem; color: #64748b; margin-top: .8rem; }
+.auth-box .switch a { color: #667eea; font-weight: 700; cursor: pointer; }
 
 .upload-hint {
   text-align: center;
