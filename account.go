@@ -2,9 +2,12 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,10 +70,17 @@ func userAuthRequired() gin.HandlerFunc {
 
 func normalizeUsername(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
+// claimItem：前端本機紀錄的一支影片（含名稱與時間，讓 DB 沒有紀錄的舊影片也能補建）
+type claimItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	TS   int64  `json:"ts"` // epoch 毫秒（本機紀錄的完成時間）
+}
+
 type authBody struct {
-	Username string   `json:"username"`
-	Password string   `json:"password"`
-	ClaimIDs []string `json:"claim_ids"` // 登入/註冊時順便認領的本機匿名影片 id
+	Username   string      `json:"username"`
+	Password   string      `json:"password"`
+	ClaimItems []claimItem `json:"claim_items"` // 登入/註冊時順便認領的本機影片
 }
 
 // POST /api/account/register
@@ -112,7 +122,7 @@ func accountRegister(c *gin.Context) {
 		return
 	}
 	token := newSession(userID)
-	claimed := claimTasks(userID, b.ClaimIDs)
+	claimed := claimTasksFull(userID, b.ClaimItems)
 	c.JSON(http.StatusOK, gin.H{"token": token, "username": username, "claimed": claimed})
 }
 
@@ -139,7 +149,7 @@ func accountLogin(c *gin.Context) {
 		return
 	}
 	token := newSession(userID)
-	claimed := claimTasks(userID, b.ClaimIDs)
+	claimed := claimTasksFull(userID, b.ClaimItems)
 	c.JSON(http.StatusOK, gin.H{"token": token, "username": username, "claimed": claimed})
 }
 
@@ -150,18 +160,48 @@ func newSession(userID string) string {
 	return token
 }
 
-// claimTasks 把一批「還沒有主人」的影片任務綁到此使用者，回傳成功認領的數量。
-func claimTasks(userID string, ids []string) int {
-	if len(ids) == 0 {
+// claimTasksFull 把一批本機影片綁到此使用者，回傳成功認領數量。
+// - tasks 已有該筆且沒主人 → 綁定
+// - tasks 沒有該筆（例如 DB 功能上線前做的舊影片）→ 只要最終影片檔還在，就補建一筆完成紀錄
+// - 已被別人擁有 → 略過
+func claimTasksFull(userID string, items []claimItem) int {
+	if len(items) == 0 {
 		return 0
 	}
 	n := 0
-	for _, id := range ids {
-		res, err := db.Exec(`UPDATE tasks SET user_id=? WHERE id=? AND (user_id IS NULL OR user_id='')`, userID, id)
+	now := time.Now().Format(time.RFC3339)
+	for _, it := range items {
+		if it.ID == "" {
+			continue
+		}
+		var owner sql.NullString
+		err := db.QueryRow(`SELECT user_id FROM tasks WHERE id=?`, it.ID).Scan(&owner)
 		if err == nil {
-			if c, _ := res.RowsAffected(); c > 0 {
-				n++
+			// 已存在
+			if !owner.Valid || owner.String == "" {
+				if _, e := db.Exec(`UPDATE tasks SET user_id=? WHERE id=?`, userID, it.ID); e == nil {
+					n++
+				}
 			}
+			continue
+		}
+		// 不存在 → 檔案還在才補建（避免建出無效紀錄）
+		finalPath := filepath.Join(storagePath, "projects", it.ID, "final.mp4")
+		if _, e := os.Stat(finalPath); e != nil {
+			continue
+		}
+		created := now
+		if it.TS > 0 {
+			created = time.UnixMilli(it.TS).Format(time.RFC3339)
+		}
+		name := it.Name
+		if name == "" {
+			name = "毛孩"
+		}
+		if _, e := db.Exec(`INSERT INTO tasks (id,dog_name,status,user_id,final_video,video_count,created_at,saved_at)
+			VALUES (?,?,?,?,?,?,?,?)`,
+			it.ID, name, "completed", userID, finalPath, 0, created, now); e == nil {
+			n++
 		}
 	}
 	return n
@@ -172,13 +212,13 @@ func accountMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"username": c.GetString("username")})
 }
 
-// POST /api/account/claim  { ids: [...] }
+// POST /api/account/claim  { items: [{id,name,ts}, ...] }
 func accountClaim(c *gin.Context) {
 	var body struct {
-		IDs []string `json:"ids"`
+		Items []claimItem `json:"items"`
 	}
 	c.ShouldBindJSON(&body)
-	n := claimTasks(c.GetString("userID"), body.IDs)
+	n := claimTasksFull(c.GetString("userID"), body.Items)
 	c.JSON(http.StatusOK, gin.H{"claimed": n})
 }
 
