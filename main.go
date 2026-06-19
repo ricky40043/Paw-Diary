@@ -167,6 +167,9 @@ func main() {
 	// Create storage directories
 	createStorageDirectories()
 
+	// 初始化 SQLite（任務記錄；檔案放 storage volume，重新部署不消失）
+	initDB(storagePath)
+
 	// Setup Gin router
 	router := gin.Default()
 
@@ -735,6 +738,9 @@ func main() {
 	})
 
 	// Catch-all for SPA routing
+	// 後台管理 API（受 ADMIN_TOKEN 保護）
+	registerAdminRoutes(router)
+
 	router.NoRoute(func(c *gin.Context) {
 		if !strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.File("./frontend/dist/index.html")
@@ -1425,6 +1431,14 @@ func processProject(projectID string) {
 	project.Progress = 100
 	project.UpdatedAt = time.Now()
 	projectsMutex.Unlock()
+
+	// 寫入 DB（必須在清理原始影片之前，才讀得到檔案大小）
+	saveTaskRecord(project, taskTiming{
+		AnalysisMs:  analysisDuration.Milliseconds(),
+		StoryMs:     storyDuration.Milliseconds(),
+		CompositeMs: compositeDuration.Milliseconds(),
+		TotalMs:     totalDuration.Milliseconds(),
+	})
 
 	// 清理原始影片與 frames（保留最終影片和結尾圖片）
 	for _, video := range project.Videos {
@@ -3140,12 +3154,18 @@ func markProjectFailed(projectID, errorMsg string) {
 	log.Printf("Project %s failed: %s", projectID, errorMsg)
 
 	projectsMutex.Lock()
-	if project, exists := projects[projectID]; exists {
+	project, exists := projects[projectID]
+	if exists {
 		project.Status = "failed"
 		project.Error = errorMsg
 		project.UpdatedAt = time.Now()
 	}
 	projectsMutex.Unlock()
+
+	// 失敗任務也寫進 DB（含已分析到的部分），方便後台分析是哪一關掛掉
+	if exists {
+		saveTaskRecord(project, taskTiming{})
+	}
 }
 
 // setProjectProgress 安全地更新專案進度（單調遞增，不倒退）。

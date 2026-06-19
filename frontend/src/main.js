@@ -6,12 +6,14 @@ import App from './App.vue'
 import PocJobs from './pages/poc/jobs/index.vue'
 import PocJobDetail from './pages/poc/jobs/[id].vue'
 import LoveStory from './pages/love-story/index.vue'
+import Admin from './pages/admin/index.vue'
 
 const routes = [
   { path: '/', redirect: '/love-story' },
   { path: '/poc/jobs', component: PocJobs },
   { path: '/poc/jobs/:id', component: PocJobDetail },
-  { path: '/love-story', component: LoveStory }
+  { path: '/love-story', component: LoveStory },
+  { path: '/admin', component: Admin }
 ]
 
 const router = createRouter({
