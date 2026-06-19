@@ -741,6 +741,9 @@ func main() {
 	// 後台管理 API（受 ADMIN_TOKEN 保護）
 	registerAdminRoutes(router)
 
+	// 使用者帳號 API（可選；登入後影片綁帳號、跨裝置可見）
+	registerAccountRoutes(router)
+
 	router.NoRoute(func(c *gin.Context) {
 		if !strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.File("./frontend/dist/index.html")
