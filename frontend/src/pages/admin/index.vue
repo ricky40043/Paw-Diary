@@ -38,13 +38,13 @@
         <h2>任務列表（{{ totalTasks }}）</h2>
         <table>
           <thead>
-            <tr><th>時間</th><th>狗狗</th><th>稱呼</th><th>風格</th><th>影片</th><th>狀態</th><th>耗時</th><th></th></tr>
+            <tr><th>時間</th><th>狗狗</th><th>帳號</th><th>風格</th><th>影片</th><th>狀態</th><th>耗時</th><th></th></tr>
           </thead>
           <tbody>
             <tr v-for="t in tasks" :key="t.id" @click="openDetail(t.id)" class="row">
               <td>{{ fmtDate(t.created_at) }}</td>
               <td>{{ t.dog_name || '—' }}</td>
-              <td>{{ t.owner_relationship || '—' }}</td>
+              <td>{{ t.username ? '👤 ' + t.username : '匿名' }}</td>
               <td>{{ modeLabel(t.story_mode) }}</td>
               <td>{{ t.video_count }}</td>
               <td><span :class="['badge', t.status]">{{ statusLabel(t.status) }}</span></td>
@@ -65,6 +65,7 @@
         <p class="meta">
           <span :class="['badge', detail.task.status]">{{ statusLabel(detail.task.status) }}</span>
           {{ fmtDate(detail.task.created_at) }} · {{ modeLabel(detail.task.story_mode) }} · {{ detail.task.video_count }} 支影片
+          · {{ detail.task.is_anonymous ? '👤 匿名' : '👤 ' + detail.task.username }}
         </p>
         <p v-if="detail.task.error" class="err">錯誤：{{ detail.task.error }}</p>
 
@@ -90,6 +91,7 @@
           <div class="vid-body">
             <div class="col">
               <b>👁 分析（畫面看到的）</b>
+              <p v-if="v.short_caption === '影片分析'" class="failed">⚠️ 這支視覺分析失敗，以下為預設值（非真實畫面分析）</p>
               <p class="caption">{{ v.short_caption || '—' }}</p>
               <p class="tags">
                 <span class="tag">互動：{{ interLabel(v.interaction_type) }}</span>
@@ -103,6 +105,12 @@
               <p class="narration">{{ v.narration || '（這支沒被寫進劇本）' }}</p>
             </div>
           </div>
+        </div>
+
+        <div class="danger-zone">
+          <button class="del-btn" @click="deleteTask(detail.task.id)" :disabled="deleting">
+            {{ deleting ? '刪除中…' : '🗑 刪除這個任務（含最終影片）' }}
+          </button>
         </div>
       </div>
     </div>
@@ -123,6 +131,7 @@ const stats = ref(null)
 const tasks = ref([])
 const totalTasks = ref(0)
 const detail = ref(null)
+const deleting = ref(false)
 
 // 小元件：水平長條圖
 const BarList = (props) => {
@@ -166,6 +175,17 @@ const loadAll = async () => {
 
 const openDetail = async (id) => {
   try { detail.value = (await api(`/tasks/${id}`)).data } catch (e) { alert('讀取失敗') }
+}
+
+const deleteTask = async (id) => {
+  if (!confirm('確定刪除這個任務？最終影片也會一併刪掉，無法復原。')) return
+  deleting.value = true
+  try {
+    await axios.delete(`/api/admin/tasks/${id}`, { headers: { 'X-Admin-Token': token.value } })
+    detail.value = null
+    await loadAll()
+  } catch (e) { alert('刪除失敗') }
+  finally { deleting.value = false }
 }
 
 const successRate = computed(() => stats.value && stats.value.total ? Math.round(stats.value.completed / stats.value.total * 100) : 0)
@@ -241,5 +261,9 @@ th { color: #64748b; font-weight: 600; }
 .tags { margin-top: .4rem; display: flex; flex-wrap: wrap; gap: .3rem; }
 .tag { background: #f1f5f9; border-radius: 5px; padding: .12rem .4rem; font-size: .72rem; color: #475569; }
 .narration { margin-top: .3rem; font-size: .88rem; color: #0f172a; line-height: 1.5; }
+.failed { margin-top: .3rem; font-size: .78rem; color: #b45309; background: #fef3c7; border-radius: 6px; padding: .25rem .5rem; }
+.danger-zone { margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid #f1f5f9; text-align: center; }
+.del-btn { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; padding: .6rem 1.2rem; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: .9rem; }
+.del-btn:hover { background: #dc2626; color: #fff; }
 @media (max-width: 560px) { .vid-body { grid-template-columns: 1fr; } }
 </style>

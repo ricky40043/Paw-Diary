@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,7 @@ func registerAdminRoutes(router *gin.Engine) {
 	g.GET("/verify", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	g.GET("/tasks", adminListTasks)
 	g.GET("/tasks/:id", adminTaskDetail)
+	g.DELETE("/tasks/:id", adminDeleteTask)
 	g.GET("/stats", adminStats)
 }
 
@@ -68,9 +70,10 @@ func adminListTasks(c *gin.Context) {
 	db.QueryRow(`SELECT COUNT(*) FROM tasks`).Scan(&total)
 
 	rows, err := db.Query(`
-		SELECT id, dog_name, owner_relationship, story_mode, status, video_count,
-		       total_ms, story_title, created_at, saved_at
-		FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?`, limit, offset)
+		SELECT t.id, t.dog_name, t.owner_relationship, t.story_mode, t.status, t.video_count,
+		       t.total_ms, t.story_title, t.created_at, t.saved_at, COALESCE(u.username,'')
+		FROM tasks t LEFT JOIN users u ON u.id=t.user_id
+		ORDER BY t.created_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -79,14 +82,14 @@ func adminListTasks(c *gin.Context) {
 
 	list := []gin.H{}
 	for rows.Next() {
-		var id, dogName, rel, mode, status, title, createdAt, savedAt string
+		var id, dogName, rel, mode, status, title, createdAt, savedAt, username string
 		var videoCount int
 		var totalMs int64
-		rows.Scan(&id, &dogName, &rel, &mode, &status, &videoCount, &totalMs, &title, &createdAt, &savedAt)
+		rows.Scan(&id, &dogName, &rel, &mode, &status, &videoCount, &totalMs, &title, &createdAt, &savedAt, &username)
 		list = append(list, gin.H{
 			"id": id, "dog_name": dogName, "owner_relationship": rel, "story_mode": mode,
 			"status": status, "video_count": videoCount, "total_ms": totalMs,
-			"story_title": title, "created_at": createdAt, "saved_at": savedAt,
+			"story_title": title, "created_at": createdAt, "saved_at": savedAt, "username": username,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"total": total, "limit": limit, "offset": offset, "tasks": list})
@@ -103,16 +106,19 @@ func adminTaskDetail(c *gin.Context) {
 	{
 		var dogName, breed, rel, mode, msg, status, errMsg, title, dogResp string
 		var visionModel, textModel, finalVideo, endingImage, createdAt, savedAt, name string
+		var userID, username string
 		var videoCount int
 		var analysisMs, storyMs, compositeMs, totalMs int64
 		err := db.QueryRow(`
-			SELECT name,dog_name,dog_breed,owner_relationship,story_mode,owner_message,status,error,
-			       video_count,story_title,dog_response,vision_model,text_model,final_video,ending_image,
-			       analysis_ms,story_ms,composite_ms,total_ms,created_at,saved_at
-			FROM tasks WHERE id=?`, id).Scan(
+			SELECT t.name,t.dog_name,t.dog_breed,t.owner_relationship,t.story_mode,t.owner_message,t.status,t.error,
+			       t.video_count,t.story_title,t.dog_response,t.vision_model,t.text_model,t.final_video,t.ending_image,
+			       t.analysis_ms,t.story_ms,t.composite_ms,t.total_ms,t.created_at,t.saved_at,
+			       COALESCE(t.user_id,''), COALESCE(u.username,'')
+			FROM tasks t LEFT JOIN users u ON u.id=t.user_id WHERE t.id=?`, id).Scan(
 			&name, &dogName, &breed, &rel, &mode, &msg, &status, &errMsg,
 			&videoCount, &title, &dogResp, &visionModel, &textModel, &finalVideo, &endingImage,
-			&analysisMs, &storyMs, &compositeMs, &totalMs, &createdAt, &savedAt)
+			&analysisMs, &storyMs, &compositeMs, &totalMs, &createdAt, &savedAt,
+			&userID, &username)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 			return
@@ -126,6 +132,7 @@ func adminTaskDetail(c *gin.Context) {
 			"final_video": finalVideo, "ending_image": endingImage,
 			"analysis_ms": analysisMs, "story_ms": storyMs, "composite_ms": compositeMs, "total_ms": totalMs,
 			"created_at": createdAt, "saved_at": savedAt,
+			"username": username, "is_anonymous": userID == "",
 		}
 	}
 
@@ -158,6 +165,26 @@ func adminTaskDetail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"task": t, "videos": videos})
+}
+
+// DELETE /api/admin/tasks/:id —— 刪除任務紀錄、影片明細，以及最終成品檔案
+func adminDeleteTask(c *gin.Context) {
+	if !adminDBReady(c) {
+		return
+	}
+	id := c.Param("id")
+	db.Exec(`DELETE FROM task_videos WHERE task_id=?`, id)
+	res, err := db.Exec(`DELETE FROM tasks WHERE id=?`, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// 連同最終影片資料夾一起刪（id 是 uuid，安全）
+	if id != "" {
+		os.RemoveAll(filepath.Join(storagePath, "projects", id))
+	}
+	n, _ := res.RowsAffected()
+	c.JSON(http.StatusOK, gin.H{"deleted": n})
 }
 
 // GET /api/admin/stats —— 基本統計：總數、成功率、風格/互動分布、平均耗時與影片數
