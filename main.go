@@ -1493,8 +1493,17 @@ func analyzeVideo(project *Project, videoIndex int) error {
 	// **新邏輯：整個影片只打一次 API，一次傳送所有圖片（最多10張）**
 	analysis, err := analyzeVideoWithAI(files, video.ID)
 	if err != nil {
-		log.Printf("Warning: AI analysis failed for video %s: %v (using default analysis)", video.ID, err)
-		// 使用預設分析，讓流程繼續
+		// 失敗自動重試一次（多半是 API 逾時/暫時性錯誤，重試常能成功）
+		log.Printf("🔁 視覺分析失敗 video=%s name=%s err=%v — 1 秒後重試一次", video.ID, video.OriginalName, err)
+		time.Sleep(1 * time.Second)
+		analysis, err = analyzeVideoWithAI(files, video.ID)
+		if err == nil {
+			log.Printf("✅ 視覺分析重試成功 video=%s name=%s", video.ID, video.OriginalName)
+		}
+	}
+	if err != nil {
+		// 重試仍失敗 → 退回預設值讓流程繼續（後台會標「視覺分析失敗」）
+		log.Printf("❌ 視覺分析重試後仍失敗 video=%s name=%s err=%v — 使用預設值", video.ID, video.OriginalName, err)
 		analysis = &Analysis{
 			HasDog:          true,
 			HasHuman:        true,
