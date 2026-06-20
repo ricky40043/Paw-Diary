@@ -57,6 +57,7 @@ type Project struct {
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
 	Error             string      `json:"error,omitempty"`
+	IP                string      `json:"ip,omitempty"` // 建立任務者的 IP（經 cloudflare）
 }
 
 type VideoInfo struct {
@@ -148,6 +149,17 @@ var (
 // ============================================================================
 // Main Entry Point
 // ============================================================================
+
+// clientIP 取真實使用者 IP（經 cloudflare / proxy）。
+func clientIP(c *gin.Context) string {
+	if ip := c.GetHeader("CF-Connecting-IP"); ip != "" {
+		return ip
+	}
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	return c.ClientIP()
+}
 
 func main() {
 	// Load environment variables
@@ -338,6 +350,7 @@ func main() {
 			Videos:            []VideoInfo{},
 			CreatedAt:         time.Now(),
 			UpdatedAt:         time.Now(),
+			IP:                clientIP(c),
 		}
 
 		projectsMutex.Lock()
