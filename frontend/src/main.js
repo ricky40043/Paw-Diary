@@ -24,6 +24,11 @@ const router = createRouter({
   routes
 })
 
+// admin-xxx 子網域：不論進到哪個路徑，一律強制顯示後台（避免看到前台）
+router.beforeEach((to) => {
+  if (isAdminHost && !to.path.startsWith('/admin')) return '/admin'
+})
+
 const app = createApp(App)
 app.use(router)
 app.mount('#app')
