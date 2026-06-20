@@ -89,10 +89,13 @@ func initDB(storageDir string) {
 		log.Printf("⚠️ DB 建表失敗: %v", err)
 		return
 	}
-	// 為既有 tasks 表補上 user_id 欄位（可空 = 匿名）；已存在會報 duplicate column，忽略即可。
-	if _, err := conn.Exec(`ALTER TABLE tasks ADD COLUMN user_id TEXT`); err != nil {
-		if !strings.Contains(err.Error(), "duplicate column") {
-			log.Printf("note: add tasks.user_id: %v", err)
+	// 為既有 tasks 表補上欄位（已存在會報 duplicate column，忽略即可）
+	for _, col := range []string{
+		`ALTER TABLE tasks ADD COLUMN user_id TEXT`,
+		`ALTER TABLE tasks ADD COLUMN ip TEXT`,
+	} {
+		if _, err := conn.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("note: %s: %v", col, err)
 		}
 	}
 	conn.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id)`)
@@ -136,18 +139,19 @@ func saveTaskRecord(p *Project, t taskTiming) {
 	_, err = tx.Exec(`
 		INSERT INTO tasks (id,name,dog_name,dog_breed,owner_relationship,story_mode,owner_message,
 			status,error,video_count,story_title,dog_response,vision_model,text_model,
-			final_video,ending_image,analysis_ms,story_ms,composite_ms,total_ms,created_at,saved_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			final_video,ending_image,analysis_ms,story_ms,composite_ms,total_ms,created_at,saved_at,ip)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			status=excluded.status, error=excluded.error, video_count=excluded.video_count,
 			story_title=excluded.story_title, dog_response=excluded.dog_response,
 			final_video=excluded.final_video, ending_image=excluded.ending_image,
 			analysis_ms=excluded.analysis_ms, story_ms=excluded.story_ms,
-			composite_ms=excluded.composite_ms, total_ms=excluded.total_ms, saved_at=excluded.saved_at`,
+			composite_ms=excluded.composite_ms, total_ms=excluded.total_ms, saved_at=excluded.saved_at,
+			ip=excluded.ip`,
 		p.ID, p.Name, p.DogName, p.DogBreed, p.OwnerRelationship, p.StoryMode, p.OwnerMessage,
 		p.Status, p.Error, len(p.Videos), storyTitle, dogResponse, aiVisionModel, aiTextModel,
 		p.FinalVideo, p.EndingImage, t.AnalysisMs, t.StoryMs, t.CompositeMs, t.TotalMs,
-		p.CreatedAt.Format(time.RFC3339), now,
+		p.CreatedAt.Format(time.RFC3339), now, p.IP,
 	)
 	if err != nil {
 		log.Printf("⚠️ saveTaskRecord insert task: %v", err)

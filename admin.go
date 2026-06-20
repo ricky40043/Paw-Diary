@@ -106,19 +106,19 @@ func adminTaskDetail(c *gin.Context) {
 	{
 		var dogName, breed, rel, mode, msg, status, errMsg, title, dogResp string
 		var visionModel, textModel, finalVideo, endingImage, createdAt, savedAt, name string
-		var userID, username string
+		var userID, username, ip string
 		var videoCount int
 		var analysisMs, storyMs, compositeMs, totalMs int64
 		err := db.QueryRow(`
 			SELECT t.name,t.dog_name,t.dog_breed,t.owner_relationship,t.story_mode,t.owner_message,t.status,t.error,
 			       t.video_count,t.story_title,t.dog_response,t.vision_model,t.text_model,t.final_video,t.ending_image,
 			       t.analysis_ms,t.story_ms,t.composite_ms,t.total_ms,t.created_at,t.saved_at,
-			       COALESCE(t.user_id,''), COALESCE(u.username,'')
+			       COALESCE(t.user_id,''), COALESCE(u.username,''), COALESCE(t.ip,'')
 			FROM tasks t LEFT JOIN users u ON u.id=t.user_id WHERE t.id=?`, id).Scan(
 			&name, &dogName, &breed, &rel, &mode, &msg, &status, &errMsg,
 			&videoCount, &title, &dogResp, &visionModel, &textModel, &finalVideo, &endingImage,
 			&analysisMs, &storyMs, &compositeMs, &totalMs, &createdAt, &savedAt,
-			&userID, &username)
+			&userID, &username, &ip)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
 			return
@@ -132,7 +132,7 @@ func adminTaskDetail(c *gin.Context) {
 			"final_video": finalVideo, "ending_image": endingImage,
 			"analysis_ms": analysisMs, "story_ms": storyMs, "composite_ms": compositeMs, "total_ms": totalMs,
 			"created_at": createdAt, "saved_at": savedAt,
-			"username": username, "is_anonymous": userID == "",
+			"username": username, "is_anonymous": userID == "", "ip": ip,
 		}
 	}
 

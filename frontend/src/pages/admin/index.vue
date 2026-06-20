@@ -66,6 +66,7 @@
           <span :class="['badge', detail.task.status]">{{ statusLabel(detail.task.status) }}</span>
           {{ fmtDate(detail.task.created_at) }} · {{ modeLabel(detail.task.story_mode) }} · {{ detail.task.video_count }} 支影片
           · {{ detail.task.is_anonymous ? '👤 匿名' : '👤 ' + detail.task.username }}
+          <span v-if="detail.task.ip"> · 🌐 {{ detail.task.ip }}</span>
         </p>
         <p v-if="detail.task.error" class="err">錯誤：{{ detail.task.error }}</p>
 
