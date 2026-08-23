@@ -93,6 +93,7 @@ func initDB(storageDir string) {
 	for _, col := range []string{
 		`ALTER TABLE tasks ADD COLUMN user_id TEXT`,
 		`ALTER TABLE tasks ADD COLUMN ip TEXT`,
+		`ALTER TABLE tasks ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0`,
 	} {
 		if _, err := conn.Exec(col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			log.Printf("note: %s: %v", col, err)

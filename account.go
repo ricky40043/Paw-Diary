@@ -33,7 +33,11 @@ func registerAccountRoutes(router *gin.Engine) {
 	auth.GET("/me", accountMe)
 	auth.POST("/claim", accountClaim)
 	auth.GET("/videos", accountVideos)
+	auth.PATCH("/videos/:id/visibility", accountUpdateVideoVisibility)
+	auth.DELETE("/videos/:id", accountDeleteVideo)
 	auth.POST("/logout", accountLogout)
+
+	router.GET("/api/public/videos", publicVideos)
 }
 
 // userAuthRequired 驗證使用者 token（Authorization: Bearer 或 X-Auth-Token），
@@ -226,7 +230,7 @@ func accountClaim(c *gin.Context) {
 func accountVideos(c *gin.Context) {
 	userID := c.GetString("userID")
 	rows, err := db.Query(`
-		SELECT id, dog_name, created_at FROM tasks
+		SELECT id, dog_name, created_at, is_public FROM tasks
 		WHERE user_id=? AND status='completed' ORDER BY created_at DESC`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -236,15 +240,116 @@ func accountVideos(c *gin.Context) {
 	list := []gin.H{}
 	for rows.Next() {
 		var id, dogName, createdAt string
-		rows.Scan(&id, &dogName, &createdAt)
+		var isPublic int
+		if err := rows.Scan(&id, &dogName, &createdAt, &isPublic); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(storagePath, "projects", id, "final.mp4")); err != nil {
+			continue
+		}
 		list = append(list, gin.H{
 			"id":         id,
 			"dog_name":   dogName,
 			"created_at": createdAt,
 			"url":        fmt.Sprintf("/storage/projects/%s/final.mp4", id),
+			"is_public":  isPublic == 1,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"videos": list})
+}
+
+// GET /api/public/videos —— 首頁公開影片，只有影片擁有者主動公開後才會出現。
+func publicVideos(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+		return
+	}
+	rows, err := db.Query(`
+		SELECT t.id, t.dog_name, t.created_at, COALESCE(u.username, '匿名')
+		FROM tasks t LEFT JOIN users u ON u.id=t.user_id
+		WHERE t.status='completed' AND t.is_public=1
+		ORDER BY t.created_at DESC LIMIT 100`)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	list := []gin.H{}
+	for rows.Next() {
+		var id, dogName, createdAt, username string
+		if err := rows.Scan(&id, &dogName, &createdAt, &username); err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(storagePath, "projects", id, "final.mp4")); err != nil {
+			continue
+		}
+		list = append(list, gin.H{
+			"id": id, "dog_name": dogName, "username": username,
+			"created_at": createdAt,
+			"url": fmt.Sprintf("/storage/projects/%s/final.mp4", id),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"videos": list})
+}
+
+// PATCH /api/account/videos/:id/visibility {"is_public": true|false}
+func accountUpdateVideoVisibility(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+		return
+	}
+	var body struct {
+		IsPublic bool `json:"is_public"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	result, err := db.Exec(`UPDATE tasks SET is_public=? WHERE id=? AND user_id=? AND status='completed'`, boolToInt(body.IsPublic), c.Param("id"), c.GetString("userID"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	changed, _ := result.RowsAffected()
+	if changed == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "影片不存在或無權限"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": c.Param("id"), "is_public": body.IsPublic})
+}
+
+// DELETE /api/account/videos/:id —— 只能刪除自己的完成影片，並移除實體檔案。
+func accountDeleteVideo(c *gin.Context) {
+	if db == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database not available"})
+		return
+	}
+	id := c.Param("id")
+	var owner string
+	if err := db.QueryRow(`SELECT user_id FROM tasks WHERE id=? AND user_id=? AND status='completed'`, id, c.GetString("userID")).Scan(&owner); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "影片不存在或無權限"})
+		return
+	}
+	if _, err := db.Exec(`DELETE FROM task_videos WHERE task_id=?`, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := db.Exec(`DELETE FROM tasks WHERE id=? AND user_id=?`, id, owner)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	deleted, _ := result.RowsAffected()
+	if deleted == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "影片不存在或無權限"})
+		return
+	}
+	if err := os.RemoveAll(filepath.Join(storagePath, "projects", id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "影片檔案刪除失敗"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": id})
 }
 
 // POST /api/account/logout
