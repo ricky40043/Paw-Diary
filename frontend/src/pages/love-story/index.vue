@@ -25,6 +25,28 @@
           </template>
         </div>
 
+        <!-- 大家的公開影片 -->
+        <section class="public-feed" aria-labelledby="public-feed-title">
+          <div class="public-feed-heading">
+            <div>
+              <h2 id="public-feed-title">🌈 大家的公開回憶</h2>
+              <p>看看其他人和毛孩一起留下的溫暖影片</p>
+            </div>
+            <button type="button" class="feed-refresh" @click="loadPublicVideos" :disabled="publicLoading">↻ 更新</button>
+          </div>
+          <p v-if="publicLoading" class="feed-empty">載入公開影片中…</p>
+          <p v-else-if="!publicVideos.length" class="feed-empty">目前還沒有公開影片，完成影片後也可以分享給大家。</p>
+          <div v-else class="public-video-grid">
+            <article v-for="item in publicVideos" :key="item.id" class="public-video-card">
+              <video :src="item.url" controls preload="metadata" playsinline></video>
+              <div class="public-video-meta">
+                <strong>{{ item.dog_name || '毛孩' }}的回憶</strong>
+                <span>@{{ item.username || '匿名' }} · {{ formatHistoryDate(item.created_at) }}</span>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <!-- 我做過的影片（未登入＝存本機；登入＝跨裝置從伺服器抓） -->
         <div v-if="displayVideos.length" class="history-box">
           <h3>📼 我做過的影片<span v-if="account.username" class="acc-tag">已登入 · 跨裝置</span></h3>
@@ -35,6 +57,12 @@
             </div>
             <a :href="item.url" target="_blank" rel="noopener" class="history-open">▶ 開啟</a>
             <a :href="item.url" :download="`${item.name}回憶錄.mp4`" class="history-open dl">⬇</a>
+            <template v-if="item.server">
+              <button type="button" class="history-visibility" @click="toggleVideoVisibility(item)">
+                {{ item.is_public ? '🌐 公開中' : '🔒 私人' }}
+              </button>
+              <button type="button" class="history-delete" @click="deleteAccountVideo(item)">🗑</button>
+            </template>
             <button v-if="!item.server" type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
           </div>
           <p class="history-hint">{{ account.username ? '✅ 這些影片已綁在你的帳號，換手機 / 電腦登入都看得到' : '影片檔都存在伺服器；只是「哪些是你做的」目前只記在這台裝置。登入就會綁進帳號，換裝置也看得到。' }}</p>
@@ -361,6 +389,8 @@ const videoHistory = ref([])
 const ACCOUNT_KEY = 'pawAccount'
 const account = ref({ token: '', username: '' })
 const accountVideos = ref([])
+const publicVideos = ref([])
+const publicLoading = ref(false)
 const showAuth = ref(false)
 const authMode = ref('login')
 const authUsername = ref('')
@@ -374,7 +404,7 @@ const localItems = () => videoHistory.value.filter(v => v.id).map(v => ({ id: v.
 // 登入＝伺服器影片（跨裝置）＋ 尚未同步到伺服器的本機影片（合併，避免任何影片消失）
 const displayVideos = computed(() => {
   if (account.value.username) {
-    const server = accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, server: true }))
+    const server = accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, is_public: v.is_public, server: true }))
     const serverIds = new Set(server.map(v => v.id))
     const localOnly = videoHistory.value.filter(v => !serverIds.has(v.id))
     return [...server, ...localOnly]
@@ -408,6 +438,42 @@ const loadAccountVideos = async () => {
     accountVideos.value = res.data.videos || []
   } catch (e) {
     if (e.response?.status === 401) logout()
+  }
+}
+
+const loadPublicVideos = async () => {
+  publicLoading.value = true
+  try {
+    const res = await axios.get('/api/public/videos')
+    publicVideos.value = res.data.videos || []
+  } catch (e) {
+    console.error('載入公開影片失敗:', e)
+  } finally {
+    publicLoading.value = false
+  }
+}
+
+const toggleVideoVisibility = async (item) => {
+  try {
+    const next = !item.is_public
+    await axios.patch(`/api/account/videos/${item.id}/visibility`, { is_public: next }, { headers: { 'X-Auth-Token': account.value.token } })
+    const target = accountVideos.value.find(v => v.id === item.id)
+    if (target) target.is_public = next
+    await loadPublicVideos()
+  } catch (e) {
+    alert(e.response?.data?.error || '更新公開設定失敗')
+  }
+}
+
+const deleteAccountVideo = async (item) => {
+  if (!confirm(`確定刪除「${item.name}的回憶錄」嗎？影片檔案也會一併刪除，無法復原。`)) return
+  try {
+    await axios.delete(`/api/account/videos/${item.id}`, { headers: { 'X-Auth-Token': account.value.token } })
+    accountVideos.value = accountVideos.value.filter(v => v.id !== item.id)
+    removeFromHistory(item.id)
+    await loadPublicVideos()
+  } catch (e) {
+    alert(e.response?.data?.error || '刪除影片失敗')
   }
 }
 
@@ -534,7 +600,7 @@ const restore = async () => {
   }
 }
 
-onMounted(() => { loadHistory(); initAccount(); restore() })
+onMounted(() => { loadHistory(); initAccount(); loadPublicVideos(); restore() })
 
 // 任一關鍵狀態變動就保存（videos 不放進 watch，改在上傳完成/移除時明確 persist，
 // 避免上傳進度每跳一格就寫一次 localStorage 造成手機卡頓）
@@ -1280,6 +1346,38 @@ h2 {
   padding: 0.2rem 0.3rem;
 }
 .history-hint { color: #888; font-size: 0.75rem; margin: 0.5rem 0 0; }
+.history-visibility, .history-delete {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 8px;
+  padding: .35rem .55rem;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.history-visibility { background: #e0e7ff; color: #4338ca; }
+.history-delete { background: #fee2e2; color: #b91c1c; }
+
+/* 公開影片 feed */
+.public-feed {
+  background: #fffaf5;
+  border: 1px solid #fde5c8;
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+.public-feed-heading { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-bottom: .8rem; }
+.public-feed-heading h2 { color: #c46b2d; font-size: 1.1rem; margin: 0; }
+.public-feed-heading p { color: #9a765e; font-size: .78rem; margin: .25rem 0 0; }
+.feed-refresh { border: 0; background: #fff; color: #c46b2d; border: 1px solid #f3c999; border-radius: 8px; padding: .4rem .7rem; cursor: pointer; font-weight: 700; }
+.feed-refresh:disabled { opacity: .55; cursor: wait; }
+.feed-empty { color: #9a765e; font-size: .85rem; padding: .6rem 0; text-align: center; }
+.public-video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .8rem; }
+.public-video-card { overflow: hidden; background: #fff; border: 1px solid #f5e5d3; border-radius: 10px; }
+.public-video-card video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #1f2937; object-fit: contain; }
+.public-video-meta { display: flex; flex-direction: column; gap: .2rem; padding: .6rem .7rem .7rem; }
+.public-video-meta strong { color: #4a3527; font-size: .9rem; }
+.public-video-meta span { color: #9a765e; font-size: .72rem; }
 
 /* 帳號列 */
 .account-bar { display: flex; align-items: center; justify-content: space-between; gap: .6rem; background: #f5f3ff; border: 1px solid #e9e5ff; border-radius: 12px; padding: .6rem .8rem; margin-bottom: 1rem; flex-wrap: wrap; }
