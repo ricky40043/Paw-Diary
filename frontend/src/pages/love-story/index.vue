@@ -25,23 +25,19 @@
           </template>
         </div>
 
-        <!-- 大家的公開影片 -->
-        <section class="public-feed" aria-labelledby="public-feed-title">
+        <!-- 公開作品 -->
+        <section v-if="publicLoading || publicVideos.length" class="public-feed" aria-labelledby="public-feed-title">
           <div class="public-feed-heading">
-            <div>
-              <h2 id="public-feed-title">🌈 大家的公開回憶</h2>
-              <p>看看其他人和毛孩一起留下的溫暖影片</p>
-            </div>
-            <button type="button" class="feed-refresh" @click="loadPublicVideos" :disabled="publicLoading">↻ 更新</button>
+            <h2 id="public-feed-title">公開作品</h2>
+            <button type="button" class="feed-refresh" @click="loadPublicVideos" :disabled="publicLoading">↻</button>
           </div>
-          <p v-if="publicLoading" class="feed-empty">載入公開影片中…</p>
-          <p v-else-if="!publicVideos.length" class="feed-empty">目前還沒有公開影片，完成影片後也可以分享給大家。</p>
+          <p v-if="publicLoading" class="feed-empty">載入中…</p>
           <div v-else class="public-video-grid">
             <article v-for="item in publicVideos" :key="item.id" class="public-video-card">
-              <video :src="item.url" controls preload="metadata" playsinline></video>
+              <video :src="item.url" :poster="item.poster_url || undefined" controls preload="metadata" playsinline></video>
               <div class="public-video-meta">
                 <strong>{{ item.dog_name || '毛孩' }}的回憶</strong>
-                <span>@{{ item.username || '匿名' }} · {{ formatHistoryDate(item.created_at) }}</span>
+                <span>{{ formatDuration(item.duration) }} · @{{ item.username || '匿名' }}</span>
               </div>
             </article>
           </div>
@@ -53,7 +49,7 @@
           <div v-for="item in displayVideos" :key="item.id" class="history-item">
             <div class="history-info">
               <span class="history-name">{{ item.name }}的回憶錄</span>
-              <span class="history-date">{{ formatHistoryDate(item.ts) }}</span>
+              <span class="history-date">{{ item.duration ? formatDuration(item.duration) + ' · ' : '' }}{{ formatHistoryDate(item.ts) }}</span>
             </div>
             <a :href="item.url" target="_blank" rel="noopener" class="history-open">▶ 開啟</a>
             <a :href="item.url" :download="`${item.name}回憶錄.mp4`" class="history-open dl">⬇</a>
@@ -65,7 +61,6 @@
             </template>
             <button v-if="!item.server" type="button" class="history-del" @click="removeFromHistory(item.id)">✕</button>
           </div>
-          <p class="history-hint">{{ account.username ? '✅ 這些影片已綁在你的帳號，換手機 / 電腦登入都看得到' : '影片檔都存在伺服器；只是「哪些是你做的」目前只記在這台裝置。登入就會綁進帳號，換裝置也看得到。' }}</p>
         </div>
 
         <!-- 登入 / 註冊彈窗 -->
@@ -404,7 +399,7 @@ const localItems = () => videoHistory.value.filter(v => v.id).map(v => ({ id: v.
 // 登入＝伺服器影片（跨裝置）＋ 尚未同步到伺服器的本機影片（合併，避免任何影片消失）
 const displayVideos = computed(() => {
   if (account.value.username) {
-    const server = accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, is_public: v.is_public, server: true }))
+    const server = accountVideos.value.map(v => ({ id: v.id, name: v.dog_name || '毛孩', url: v.url, ts: v.created_at, duration: v.duration, is_public: v.is_public, server: true }))
     const serverIds = new Set(server.map(v => v.id))
     const localOnly = videoHistory.value.filter(v => !serverIds.has(v.id))
     return [...server, ...localOnly]
@@ -451,6 +446,12 @@ const loadPublicVideos = async () => {
   } finally {
     publicLoading.value = false
   }
+}
+
+const formatDuration = (seconds) => {
+  const total = Math.max(0, Math.round(Number(seconds) || 0))
+  const minutes = Math.floor(total / 60)
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`
 }
 
 const toggleVideoVisibility = async (item) => {

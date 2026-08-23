@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -244,7 +245,8 @@ func accountVideos(c *gin.Context) {
 		if err := rows.Scan(&id, &dogName, &createdAt, &isPublic); err != nil {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(storagePath, "projects", id, "final.mp4")); err != nil {
+		finalPath := filepath.Join(storagePath, "projects", id, "final.mp4")
+		if _, err := os.Stat(finalPath); err != nil {
 			continue
 		}
 		list = append(list, gin.H{
@@ -253,6 +255,8 @@ func accountVideos(c *gin.Context) {
 			"created_at": createdAt,
 			"url":        fmt.Sprintf("/storage/projects/%s/final.mp4", id),
 			"is_public":  isPublic == 1,
+			"duration":   getVideoDuration(finalPath),
+			"poster_url": ensureVideoPoster(id, finalPath),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"videos": list})
@@ -281,16 +285,35 @@ func publicVideos(c *gin.Context) {
 		if err := rows.Scan(&id, &dogName, &createdAt, &username); err != nil {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(storagePath, "projects", id, "final.mp4")); err != nil {
+		finalPath := filepath.Join(storagePath, "projects", id, "final.mp4")
+		if _, err := os.Stat(finalPath); err != nil {
 			continue
 		}
 		list = append(list, gin.H{
 			"id": id, "dog_name": dogName, "username": username,
 			"created_at": createdAt,
 			"url": fmt.Sprintf("/storage/projects/%s/final.mp4", id),
+			"duration": getVideoDuration(finalPath),
+			"poster_url": ensureVideoPoster(id, finalPath),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"videos": list})
+}
+
+// ensureVideoPoster 產生影片第一幀縮圖，避免影片列表載入時只看到黑底。
+func ensureVideoPoster(id, finalPath string) string {
+	posterPath := filepath.Join(storagePath, "projects", id, "poster.jpg")
+	if _, err := os.Stat(posterPath); err == nil {
+		return fmt.Sprintf("/storage/projects/%s/poster.jpg", id)
+	}
+	if err := os.MkdirAll(filepath.Dir(posterPath), 0755); err != nil {
+		return ""
+	}
+	cmd := exec.Command("ffmpeg", "-y", "-i", finalPath, "-frames:v", "1", "-q:v", "3", posterPath)
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("/storage/projects/%s/poster.jpg", id)
 }
 
 // PATCH /api/account/videos/:id/visibility {"is_public": true|false}
