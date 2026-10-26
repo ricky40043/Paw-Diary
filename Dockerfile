@@ -17,6 +17,7 @@ RUN go mod download
 
 # Copy source and build
 COPY *.go ./
+COPY internal/recovery ./internal/recovery
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o main .
 
 # -----------------------------------------------------------------------------

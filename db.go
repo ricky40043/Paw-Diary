@@ -91,6 +91,8 @@ func initDB(storageDir string) {
 	}
 	// 為既有 tasks 表補上欄位（已存在會報 duplicate column，忽略即可）
 	for _, col := range []string{
+		`ALTER TABLE users ADD COLUMN email TEXT`,
+		`ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN user_id TEXT`,
 		`ALTER TABLE tasks ADD COLUMN ip TEXT`,
 		`ALTER TABLE tasks ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0`,
@@ -100,6 +102,10 @@ func initDB(storageDir string) {
 		}
 	}
 	conn.Exec(`CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id)`)
+	if _, err := conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_recovery_email ON users(email) WHERE email IS NOT NULL`); err != nil {
+		log.Printf("recovery email index setup failed")
+		return
+	}
 	db = conn
 	log.Printf("✅ DB ready: %s", dbPath)
 }

@@ -44,3 +44,5 @@ frontend/yarn-error.log*
 Thumbs.db
 
 CLAUDE.md
+
+.recovery-mail.env

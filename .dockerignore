@@ -51,3 +51,5 @@ frontend/dist
 *.mp4
 *.mov
 *.avi
+
+.recovery-mail.env
