@@ -15,6 +15,7 @@
       <div v-if="currentStep === 1" class="step-card">
         <!-- 帳號列：登入可跨裝置看影片；不登入也能做 -->
         <div class="account-bar">
+          <a href="/api/account/password-help" class="acc-btn">忘記／修改密碼・綁定信箱</a>
           <template v-if="account.username">
             <span class="acc-who">👤 {{ account.username }}</span>
             <button type="button" class="acc-btn ghost" @click="logout">登出</button>

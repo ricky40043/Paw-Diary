@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"database/sql"
+	"dog-memory-app/internal/recovery"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -26,6 +27,12 @@ func genToken() string {
 }
 
 func registerAccountRoutes(router *gin.Engine) {
+	if db != nil {
+		passwordRecovery := &recovery.Recovery{DB: db, Prefix: "/api/account", Title: "抓抓日記", Paw: true}
+		if err := passwordRecovery.Register(router); err != nil {
+			panic(err)
+		}
+	}
 	g := router.Group("/api/account")
 	g.POST("/register", accountRegister)
 	g.POST("/login", accountLogin)
@@ -292,8 +299,8 @@ func publicVideos(c *gin.Context) {
 		list = append(list, gin.H{
 			"id": id, "dog_name": dogName, "username": username,
 			"created_at": createdAt,
-			"url": fmt.Sprintf("/storage/projects/%s/final.mp4", id),
-			"duration": getVideoDuration(finalPath),
+			"url":        fmt.Sprintf("/storage/projects/%s/final.mp4", id),
+			"duration":   getVideoDuration(finalPath),
 			"poster_url": ensureVideoPoster(id, finalPath),
 		})
 	}
